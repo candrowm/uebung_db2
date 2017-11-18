@@ -1,0 +1,6 @@
+.dep/
+.misc/
+.ob/
+bin/
+tools/
+workspace.xml
