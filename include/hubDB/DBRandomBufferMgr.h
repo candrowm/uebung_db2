@@ -25,6 +25,7 @@ namespace HubDB{
 			int findBlock(DBFile & file,BlockNo blockNo);
 			int findBlock(DBBCB * bcb);
 
+
 			void setBit(int i){ bitMap[i/32] |= (1<<(i%32));}
 			void unsetBit(int i){ bitMap[i/32] &= (~(1<<(i%32)));}
 			int getBit(int i)const { return (bitMap[i/32] & (1<<(i%32))) != 0 ? 1 : 0;}
