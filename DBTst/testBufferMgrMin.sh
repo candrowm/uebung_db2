@@ -105,6 +105,6 @@ rm datafile.txt
 rm -rf $DATABASE
 
 # Tests
-lasttest 1000 50
+lasttest 5000 50
 # 1. Parameter: Anzahl Tupel
 # 2. Parameter: Zu Loeschende Tupel (0 bis zu diesem Wert-1, maximaler Wert = 99)
