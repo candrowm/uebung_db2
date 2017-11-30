@@ -90,7 +90,7 @@ DBBCB *DBMyBufferMgr::fixBlock(DBFile &file, BlockNo blockNo, DBBCBLockMode mode
     LOG4CXX_DEBUG(logger, "framePositionOfBlock:" + TO_STR(framePositionOfBlock));
 
     if (framePositionOfBlock == NOT_FOUND_POSITION) {
-        framePositionOfBlock = tryFindAppropriateReplacementPosition();
+        framePositionOfBlock = findAppropriateReplacementPosition();
 
         if (bcbList[framePositionOfBlock] != NULL) {
             if (bcbList[framePositionOfBlock]->getDirty() == false)
@@ -117,7 +117,7 @@ DBBCB *DBMyBufferMgr::fixBlock(DBFile &file, BlockNo blockNo, DBBCBLockMode mode
     return rc;
 }
 
-int DBMyBufferMgr::tryFindAppropriateReplacementPosition() const {
+int DBMyBufferMgr::findAppropriateReplacementPosition() const {
     int appropriateReplacementPosition = NOT_FOUND_POSITION;
 
     for (int i = 0; i < maxBlockCnt; i++) {

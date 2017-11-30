@@ -43,7 +43,7 @@ namespace HubDB {
 
             void removeFixedFrameFromUnfixedFramePositionList(int framePositionOfFixedBlock);
 
-            int tryFindAppropriateReplacementPosition() const;
+            int findAppropriateReplacementPosition() const;
         };
     }
 }
