@@ -14,13 +14,17 @@ int myBMgr = DBMyBufferMgr::registerClass();
 extern "C" void *createDBMyBufferMgr(int nArgs, va_list &ap);
 
 DBMyBufferMgr::DBMyBufferMgr(bool doThreading, int bufferBlock)
-        : DBBufferMgr(doThreading, bufferBlock), bcbList(NULL), unfixedFramesPositionList(maxBlockCnt) {
+        : DBBufferMgr(doThreading, bufferBlock), bcbList(NULL), unfixedFramesPositionList() {
+    std::cout << "Hello MyBufferManager!" << std::endl;
+
     if (logger != NULL) LOG4CXX_INFO(logger, "DBMyBufferMgr()");
 
     bcbList = new DBBCB *[maxBlockCnt];
     for (int i = 0; i < maxBlockCnt; i++) {
         bcbList[i] = NULL;
     }
+
+    unfixedFramesPositionList.reserve(maxBlockCnt);
 
     if (logger != NULL) LOG4CXX_DEBUG(logger, "this:\n" + toString("\t"));
 }
@@ -85,22 +89,8 @@ DBBCB *DBMyBufferMgr::fixBlock(DBFile &file, BlockNo blockNo, DBBCBLockMode mode
 
     LOG4CXX_DEBUG(logger, "framePositionOfBlock:" + TO_STR(framePositionOfBlock));
 
-    if (framePositionOfBlock == -1) {
-        for (int i = 0; i < maxBlockCnt; i++) {
-            if (bcbList[i] == NULL) {
-                framePositionOfBlock = i;
-                break;
-            }
-        }
-
-        if (framePositionOfBlock == -1) {
-            if (unfixedFramesPositionList.size() > 0) {
-                framePositionOfBlock = unfixedFramesPositionList[0];
-            } else {
-                throw DBBufferMgrException("no more free pages");
-            }
-        }
-
+    if (framePositionOfBlock == NOT_FOUND_POSITION) {
+        framePositionOfBlock = tryFindAppropriateReplacementPosition();
 
         if (bcbList[framePositionOfBlock] != NULL) {
             if (bcbList[framePositionOfBlock]->getDirty() == false)
@@ -109,19 +99,43 @@ DBBCB *DBMyBufferMgr::fixBlock(DBFile &file, BlockNo blockNo, DBBCBLockMode mode
         }
 
         bcbList[framePositionOfBlock] = new DBBCB(file, blockNo);
-        if (read == true)
+        if (read == true) {
             fileMgr.readFileBlock(bcbList[framePositionOfBlock]->getFileBlock());
+        }
     }
 
     DBBCB *rc = bcbList[framePositionOfBlock];
     if (rc->grantAccess(mode) == false) {
         rc = NULL;
+        removeFixedFrameFromUnfixedFramePositionList(framePositionOfBlock);
+        unfixedFramesPositionList.push_back(framePositionOfBlock);
     } else {
         removeFixedFrameFromUnfixedFramePositionList(framePositionOfBlock);
     }
 
     LOG4CXX_DEBUG(logger, "rc: " + TO_STR(rc));
     return rc;
+}
+
+int DBMyBufferMgr::tryFindAppropriateReplacementPosition() const {
+    int appropriateReplacementPosition = NOT_FOUND_POSITION;
+
+    for (int i = 0; i < maxBlockCnt; i++) {
+        bool foundEmptyPosition = (bcbList[i] == NULL);
+        if (foundEmptyPosition) {
+            return i;
+        }
+    }
+
+    if (appropriateReplacementPosition == NOT_FOUND_POSITION) {
+        bool unfixedFrameExist = unfixedFramesPositionList.size() > 0;
+        if (unfixedFrameExist) {
+            appropriateReplacementPosition = unfixedFramesPositionList[0];
+        } else {
+            throw DBBufferMgrException("no more free pages");
+        }
+    }
+    return appropriateReplacementPosition;
 }
 
 void DBMyBufferMgr::removeFixedFrameFromUnfixedFramePositionList(int framePositionOfFixedBlock) {
@@ -135,8 +149,8 @@ void DBMyBufferMgr::removeFixedFrameFromUnfixedFramePositionList(int framePositi
 
 int DBMyBufferMgr::findFramePostionsOfBlock(DBFile &file, BlockNo blockNo) {
     LOG4CXX_INFO(logger, "findFramePostionsOfBlock()");
-    int pos = -1;
-    for (int i = 0; pos == -1 && i < maxBlockCnt; ++i) {
+    int pos = NOT_FOUND_POSITION;
+    for (int i = 0; pos == NOT_FOUND_POSITION && i < maxBlockCnt; ++i) {
         if (bcbList[i] != NULL &&
             bcbList[i]->getFileBlock() == file &&
             bcbList[i]->getFileBlock().getBlockNo() == blockNo)

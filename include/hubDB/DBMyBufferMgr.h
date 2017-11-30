@@ -39,7 +39,11 @@ namespace HubDB {
             vector<int> unfixedFramesPositionList;
             static LoggerPtr logger;
 
+            int NOT_FOUND_POSITION = -1;
+
             void removeFixedFrameFromUnfixedFramePositionList(int framePositionOfFixedBlock);
+
+            int tryFindAppropriateReplacementPosition() const;
         };
     }
 }
