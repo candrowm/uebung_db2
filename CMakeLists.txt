@@ -55,7 +55,7 @@ set(SOURCE_FILES
     include/hubDB/DBSocket.h
     include/hubDB/DBSysCatMgr.h
     include/hubDB/DBTable.h
-    include/hubDB/DBTypes.h)
+    include/hubDB/DBTypes.h include/hubDB/DBMyBufferMgr.h DBLib/DBMyBufferMgr.cpp)
 
 ################################################################################
 # Flex and Bison
