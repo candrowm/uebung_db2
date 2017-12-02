@@ -101,8 +101,8 @@ target_link_libraries(hubDBClient hubDB)
 add_executable(hubDBServer DBApp/hubDBServer.cpp)
 target_link_libraries(hubDBServer hubDB)
 
-#add_executable(hubDBTestBufMgr DBApp/hubDBTestBufMgr.cpp)
-#target_link_libraries(hubDBTestBufMgr hubDB)
+add_executable(hubDBTestBufMgr DBApp/hubDBTestBufMgrFrame.cpp)
+target_link_libraries(hubDBTestBufMgr hubDB)
 
 #add_executable(hubDBTestIndex DBApp/hubDBTestIndex.cpp)
 #target_link_libraries(hubDBTestIndex hubDB)
