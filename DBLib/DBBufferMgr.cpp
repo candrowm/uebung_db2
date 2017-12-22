@@ -181,6 +181,7 @@ DBBACB DBBufferMgr::fixNewBlock(DBFile & file)
     	while((bcb= fixBlock(file,b,LOCK_EXCLUSIVE,false))==NULL)
         	waitForLock();
     	memset(bcb->getDataPtr(),0,DBFileBlock::getBlockSize());
+        this->blockCounter++;
     }catch(DBException e){
         unlock();
         throw e;

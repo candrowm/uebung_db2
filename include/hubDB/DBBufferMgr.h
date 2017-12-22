@@ -39,6 +39,8 @@ namespace HubDB{
 			DBBACB upgradeToExclusive(const DBBACB & bacb);
 			const DBBACB downgradeToShared(const DBBACB & bacb);
 
+			int blockCounter = 0;
+
 		protected:
 			virtual bool isBlockOfFileOpen(DBFile & file) const = 0;
 			virtual void closeAllOpenBlocks(DBFile & file) = 0;
