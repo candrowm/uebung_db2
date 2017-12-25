@@ -55,7 +55,8 @@ set(SOURCE_FILES
     include/hubDB/DBSocket.h
     include/hubDB/DBSysCatMgr.h
     include/hubDB/DBTable.h
-    include/hubDB/DBTypes.h include/hubDB/DBMyBufferMgr.h DBLib/DBMyBufferMgr.cpp)
+    include/hubDB/catch.hpp
+    include/hubDB/DBTypes.h include/hubDB/DBMyBufferMgr.h DBLib/DBMyBufferMgr.cpp DBLib/TestClass.cpp include/hubDB/DBMyIndexExample.h DBLib/DBMyIndexExample.cpp)
 
 ################################################################################
 # Flex and Bison
@@ -103,6 +104,9 @@ target_link_libraries(hubDBServer hubDB)
 
 add_executable(hubDBTestBufMgr DBApp/hubDBTestBufMgrFrame.cpp)
 target_link_libraries(hubDBTestBufMgr hubDB)
+
+add_executable(unitTest DBLib/TestClass.cpp)
+target_link_libraries(hubDB)
 
 #add_executable(hubDBTestIndex DBApp/hubDBTestIndex.cpp)
 #target_link_libraries(hubDBTestIndex hubDB)
