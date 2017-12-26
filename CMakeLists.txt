@@ -17,6 +17,7 @@ set(SOURCE_FILES
     DBLib/DBFileBlock.cpp
     DBLib/DBFileMgr.cpp
     DBLib/DBIndex.cpp
+        DBLib/DBMyIndex.cpp
     DBLib/DBLock.cpp
     DBLib/DBManager.cpp
     DBLib/DBMonitorMgr.cpp
@@ -49,6 +50,7 @@ set(SOURCE_FILES
     include/hubDB/DBQueryMgr.h
     include/hubDB/DBRandomBufferMgr.h
     include/hubDB/DBSeqIndex.h
+        include/hubDB/DBMyIndex.h
     include/hubDB/DBServer.h
     include/hubDB/DBServerSocket.h
     include/hubDB/DBSimpleQueryMgr.h
@@ -56,7 +58,7 @@ set(SOURCE_FILES
     include/hubDB/DBSysCatMgr.h
     include/hubDB/DBTable.h
     include/hubDB/catch.hpp
-    include/hubDB/DBTypes.h include/hubDB/DBMyBufferMgr.h DBLib/DBMyBufferMgr.cpp DBLib/TestClass.cpp include/hubDB/DBMyIndexExample.h DBLib/DBMyIndexExample.cpp)
+    include/hubDB/DBTypes.h include/hubDB/DBMyBufferMgr.h DBLib/DBMyBufferMgr.cpp DBLib/TestClass.cpp)
 
 ################################################################################
 # Flex and Bison
@@ -107,6 +109,9 @@ target_link_libraries(hubDBTestBufMgr hubDB)
 
 add_executable(unitTest DBLib/TestClass.cpp)
 target_link_libraries(hubDB)
+
+add_executable(hubDBTestIndex DBApp/hubDBTestIndex.cpp)
+target_link_libraries(hubDBTestIndex hubDB)
 
 #add_executable(hubDBTestIndex DBApp/hubDBTestIndex.cpp)
 #target_link_libraries(hubDBTestIndex hubDB)
