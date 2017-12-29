@@ -1223,9 +1223,9 @@ bool TreeIntInnerBlock::insertBlockNo(BlockNo blockNoLeft, const DBAttrType &val
             }
             //value <= this->values[i]
             if(this->compare(i, value) >= 0){
-                memcpy(&this->values[i + 1], &this->values[i],
+                memmove(&this->values[i + 1], &this->values[i],
                        sizeof(int) * (this->currentValueCounter - i));
-                memcpy(&this->blockNos[i + 2], &this->blockNos[i + 1],
+                memmove(&this->blockNos[i + 2], &this->blockNos[i + 1],
                        sizeof(BlockNo) * (this->currentValueCounter - i));
                 this->blockNos[i] = blockNoLeft;
                 this->blockNos[i + 1] = blockNoRight;
@@ -1257,8 +1257,8 @@ bool TreeIntInnerBlock::insertBlockNo(int value, BlockNo blockNo) {
             // Mitten in der Liste hinzufügen
             for (int i = 0; i < this->currentValueCounter; i++) {
                 if (this->values[i] >= value) {
-                    memcpy(&values[i + 1], &values[i], (currentValueCounter - i + 1) * sizeof(int));
-                    memcpy(&blockNos[i + 1], &blockNos[i], (currentValueCounter - i + 1) * sizeof(BlockNo));
+                    memmove(&values[i + 1], &values[i], (currentValueCounter - i + 1) * sizeof(int));
+                    memmove(&blockNos[i + 1], &blockNos[i], (currentValueCounter - i + 1) * sizeof(BlockNo));
                     values[i] = value;
                     blockNos[i] = blockNo;
                     this->currentValueCounter++;
@@ -1384,8 +1384,8 @@ bool TreeIntLeafBlock::insertTID(const DBAttrType &val, TID tid) {
             // Mitten in der Liste hinzufügen
             for (int i = 0; i < this->currentValueCounter; i++) {
                 if (this->values[i] >= value) {
-                    memcpy(&values[i + 1], &values[i], (currentValueCounter - i) * sizeof(int));
-                    memcpy(&tids[i + 1], &tids[i], (currentValueCounter - i) * sizeof(TID));
+                    memmove(&values[i + 1], &values[i], (currentValueCounter - i) * sizeof(int));
+                    memmove(&tids[i + 1], &tids[i], (currentValueCounter - i) * sizeof(TID));
                     values[i] = value;
                     tids[i] = tid;
                     this->currentValueCounter++;
@@ -1414,8 +1414,8 @@ IntUndersizedAndValuePair TreeIntLeafBlock::removeTID(int value, TID tid) {
         // Mitten in der Liste löschen
         for (int i = 0; i < this->currentValueCounter; i++) {
             if (this->values[i] == value) {
-                memcpy(&values[i], &values[i + 1], (currentValueCounter - i) * sizeof(int));
-                memcpy(&tids[i], &tids[i + 1], (currentValueCounter - i) * sizeof(TID));
+                memmove(&values[i], &values[i + 1], (currentValueCounter - i) * sizeof(int));
+                memmove(&tids[i], &tids[i + 1], (currentValueCounter - i) * sizeof(TID));
                 this->currentValueCounter--;
                 break;
             }
