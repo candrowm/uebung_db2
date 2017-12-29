@@ -55,13 +55,24 @@ DBMyIndex::DBMyIndex(DBBufferMgr &bufferMgr, DBFile &file,
         bufMgr.unfixBlock(metaBlock);
 
         rootNode.copyBlockToDBBACB(rootBlock);
+        //TreeIntLeafBlock someIntLeafBlock = (TreeIntLeafBlock) *rootBlock.getDataPtr();
+        TreeLeafBlock * someTreeBlock = getLeafBlockFromDBBACB(rootBlock);
+        //Note: dont forget to delete someTreeBlock !
+        delete someTreeBlock;
         bufMgr.unfixBlock(rootBlock);
     }
 
     // TestZwecke
-    /*
-    insertValueFirstCall(81, TID());
+    DBIntType * one = new DBIntType(1);
+    DBIntType * two = new DBIntType(2);
+    DBIntType * five = new DBIntType(5);
+    DBIntType * ten = new DBIntType(10);
+    insertValueFirstCall(1, TID());
+    insertValueFirstCall(2, TID());
+    insertValueFirstCall(5, TID());
+    insertValueFirstCall(10, TID());
     printAllBlocks();
+    /*
     insertValueFirstCall(17, TID());
     printAllBlocks();
     insertValueFirstCall(19, TID());
@@ -106,6 +117,36 @@ DBMyIndex::~DBMyIndex() {
 
 }
 
+TreeInnerBlock * DBMyIndex::getInnerBlockFromDBBACB(DBBACB d){
+    switch(attrType) {
+        case INT: {
+            TreeIntInnerBlock *intInnerBlock = new TreeIntInnerBlock(d.getBlockNo());
+            intInnerBlock->copyDBBACBToBlock(d);
+            return intInnerBlock;
+            break;
+        }
+        default: {
+            return nullptr;
+            break;
+        }
+    }
+}
+
+TreeLeafBlock * DBMyIndex::getLeafBlockFromDBBACB(DBBACB d){
+    switch(attrType) {
+        case INT: {
+            TreeIntLeafBlock *intLeafBlock = new TreeIntLeafBlock(d.getBlockNo());
+            //intLeafBlock->updatePointers();
+            intLeafBlock->copyDBBACBToBlock(d);
+            return intLeafBlock;
+            break;
+        }
+        default: {
+            return nullptr;
+            break;
+        }
+    }
+}
 
 // Das Ausgeben aller Blocks der Indexdatei
 void DBMyIndex::printAllBlocks() {
@@ -115,20 +156,20 @@ void DBMyIndex::printAllBlocks() {
     std::cout << " Root No: " << fStartBlock->rootBlockNo << std::endl;
     bufMgr.unfixBlock(fStart);
 
-
-    for (int i = 1; i < bufMgr.blockCounter; i++) {
+    
+    for (int i = 1; i < bufMgr.getBlockCnt(file); i++) {
         try {
             DBBACB fRoot = bufMgr.fixBlock(file, i, LOCK_SHARED);
             TreeBlock *t = (TreeBlock *) fRoot.getDataPtr();
             if (!t->leaf) {
-                TreeIntInnerBlock *fRootBlock = (TreeIntInnerBlock *) fRoot.getDataPtr();
-                fRootBlock->updatePointers();
+                TreeInnerBlock *fRootBlock = getInnerBlockFromDBBACB(fRoot);
+                //fRootBlock->updatePointers();
                 fRootBlock->printAllValues();
             }
             if (t->leaf) {
-                TreeIntLeafBlock *treeIntLeafBlock = (TreeIntLeafBlock *) fRoot.getDataPtr();
-                treeIntLeafBlock->updatePointers();
-                treeIntLeafBlock->printAllValues();
+                TreeLeafBlock *treeLeafBlock = getLeafBlockFromDBBACB(fRoot);
+                //treeLeafBlock->updatePointers();
+                treeLeafBlock->printAllValues();
             }
             bufMgr.unfixBlock(fRoot);
         } catch (int e) {
@@ -508,7 +549,7 @@ DBMyIndex::removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
                         treeIntInnerBlock->copyBlockToDBBACB(rootB);
                         bufMgr.unfixBlock(rootB);
 
-                        undersizedTreeIntLeafBlock->insertTID(rIntValueAndTIDPair.value, rIntValueAndTIDPair.tid);
+                        undersizedTreeIntLeafBlock->insertTID(DBIntType(rIntValueAndTIDPair.value), rIntValueAndTIDPair.tid);
                         undersizedTreeIntLeafBlock->copyBlockToDBBACB(undersizedBlock);
                         bufMgr.unfixBlock(undersizedBlock);
 
@@ -538,7 +579,7 @@ DBMyIndex::removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
                         treeIntInnerBlock->copyBlockToDBBACB(rootB);
                         bufMgr.unfixBlock(rootB);
 
-                        undersizedTreeIntLeafBlock->insertTID(rIntValueAndTIDPair.value, rIntValueAndTIDPair.tid);
+                        undersizedTreeIntLeafBlock->insertTID(DBIntType(rIntValueAndTIDPair.value), rIntValueAndTIDPair.tid);
                         undersizedTreeIntLeafBlock->copyBlockToDBBACB(undersizedBlock);
                         bufMgr.unfixBlock(undersizedBlock);
 
@@ -720,53 +761,43 @@ void DBMyIndex::insertValueFirstCall(int value, const TID &tid) {
     DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_SHARED);
     TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
     bufMgr.unfixBlock(metaB);
-    insertValue(startBlock->rootBlockNo, value, tid, 0);
+    insertValue(startBlock->rootBlockNo, DBIntType(value), tid, 0);
 }
 
 // Diese Funktion wird rekursiv aufgerufen, dabei wird die startBlockNo angegeben (anfangs der Rootknoten)
 // Ziel ist es, die Funktion so lange rekursiv aufzufrufen, bis man einen Blattknoten erreicht hat
-ReturnIntInsertValue
-DBMyIndex::insertValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo parentBlockNo) {
-    std::cout << "INSERT VALUE " << value << " StartBlock: " << startBlockNo << std::endl;
-
-
+ReturnInsertValue
+DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID &tid, BlockNo parentBlockNo) {
+    std::cout << "INSERT VALUE " << value.toString("") << " StartBlock: " << startBlockNo << std::endl;
+    //int value = ((DBIntType *)val)->getVal();
     DBBACB rootB = bufMgr.fixBlock(file, startBlockNo, LOCK_EXCLUSIVE);
     TreeBlock *treeBlock = (TreeBlock *) rootB.getDataPtr();
-
     // Falls der Block ein Blattknoten ist --> Wert einfügen
     if (treeBlock->leaf) {
-        TreeIntLeafBlock *treeIntLeafBlock = (TreeIntLeafBlock *) rootB.getDataPtr();
-        treeIntLeafBlock->updatePointers();
-        bool split = treeIntLeafBlock->insertTID(value, tid);
+        TreeLeafBlock *treeLeafBlock = getLeafBlockFromDBBACB(rootB); //don't forget to delete
+        //treeLeafBlock->updatePointers();
+        bool split = treeLeafBlock->insertTID(value, tid);
 
         if (!split) {
             std::cout << "kein Split notwendig" << std::endl;
-            treeIntLeafBlock->copyBlockToDBBACB(rootB);
+            treeLeafBlock->copyBlockToDBBACB(rootB);
             bufMgr.unfixBlock(rootB);
-
-            return ReturnIntInsertValue(0, 0, 0);
+            delete treeLeafBlock;
+            return ReturnInsertValue(0, DBIntType(0), 0);
         }
 
 
         // Der Blattknoten, in dem man den neuen Wert eingefügt hat, ist zu voll --> Split des Blattknoten notwendig
         if (split) {
             std::cout << " SPLITEN" << std::endl;
-
-
+            
             // Neuer Blattknoten, auf dem Haelfte der Werte uebertragen werden, die beim alten Blattknoten geloescht werden
             DBBACB newLeafBlock = bufMgr.fixNewBlock(file);
-            TreeIntLeafBlock newTreeIntLeafBlock = TreeIntLeafBlock(newLeafBlock.getBlockNo());
-            int offset = std::ceil((treeIntLeafBlock->maxValueCounter) / 2);
-            memcpy((void *) newTreeIntLeafBlock.values, &(treeIntLeafBlock->values[offset]),
-                   sizeof(int) * (treeIntLeafBlock->maxValueCounter - offset));
-            memcpy((void *) newTreeIntLeafBlock.tids, &(treeIntLeafBlock->tids[offset]),
-                   sizeof(tid) * (treeIntLeafBlock->maxValueCounter - offset));
-            newTreeIntLeafBlock.currentValueCounter = treeIntLeafBlock->maxValueCounter - offset;
-            treeIntLeafBlock->currentValueCounter = offset;
+            TreeLeafBlock * newTreeLeafBlock = treeLeafBlock->splitBlock(newLeafBlock.getBlockNo()); //don't forget to delete
 
-            BlockNo left = treeIntLeafBlock->blockNo;
-            BlockNo right = newTreeIntLeafBlock.blockNo;
-            int newValue = treeIntLeafBlock->values[treeIntLeafBlock->currentValueCounter - 1];
+            BlockNo left = treeLeafBlock->blockNo;
+            BlockNo right = newTreeLeafBlock->blockNo;
+            DBAttrType * newValue = treeLeafBlock->getValue(treeLeafBlock->currentValueCounter - 1);
 
             // Falls ein Split gemacht wurde und es keinen Elternknoten gibt --> Elternknoten erstellen + diesen als Root markieren
             if (parentBlockNo == 0) {
@@ -775,36 +806,46 @@ DBMyIndex::insertValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
 
                 // Neuer Elternknoten und diesem Pointer + Werte uebergeben
                 DBBACB newInnerBlock = bufMgr.fixNewBlock(file);
-                TreeIntInnerBlock newTreeIntInnerBlock = TreeIntInnerBlock(newInnerBlock.getBlockNo());
-                newTreeIntInnerBlock.insertBlockNo(left, newValue, right);
+                TreeInnerBlock * newRoot = createNewRoot(newInnerBlock.getBlockNo()); //don't forget to delete!
+                newRoot->insertBlockNo(left, *newValue, right, true);
 
-                startBlock->rootBlockNo = newTreeIntInnerBlock.blockNo;
+                startBlock->rootBlockNo = newRoot->blockNo;
 
+                //Alle änderungen speichern
                 startBlock->copyBlockToDBBACB(metaB);
-                newTreeIntInnerBlock.copyBlockToDBBACB(newInnerBlock);
-                newTreeIntLeafBlock.copyBlockToDBBACB(newLeafBlock);
-                treeIntLeafBlock->copyBlockToDBBACB(rootB);
-
-
+                newRoot->copyBlockToDBBACB(newInnerBlock);
+                newTreeLeafBlock->copyBlockToDBBACB(newLeafBlock);
+                treeLeafBlock->copyBlockToDBBACB(rootB);
+                
+                delete newRoot;
+                delete newTreeLeafBlock;
+                delete treeLeafBlock;
+                
                 std::cout << " Meta Block anpassen" << std::endl;
                 bufMgr.unfixBlock(newInnerBlock);
                 bufMgr.unfixBlock(metaB);
                 bufMgr.unfixBlock(newLeafBlock);
                 bufMgr.unfixBlock(rootB);
 
-                return ReturnIntInsertValue(0, 0, 0);
+                return ReturnInsertValue(0, DBIntType(0), 0);
             }
 
             // Andernfalls: Es gibt Elternknoden --> Diesem Pointer + Value + Pointer uebergeben
             // Elternknoten fügt Pointer+Value+Pointer hinzu (ggf. kann dort wieder ein Split entstehen)
             std::cout << " Eltern knoten muss sich um einfuegen kuemmern" << std::endl;
 
-            newTreeIntLeafBlock.copyBlockToDBBACB(newLeafBlock);
-            treeIntLeafBlock->copyBlockToDBBACB(rootB);
+            newTreeLeafBlock->copyBlockToDBBACB(newLeafBlock);
+            treeLeafBlock->copyBlockToDBBACB(rootB);
+            
+            delete newTreeLeafBlock;
+            delete treeLeafBlock;
+            
             bufMgr.unfixBlock(newLeafBlock);
             bufMgr.unfixBlock(rootB);
-
-            return ReturnIntInsertValue(left, newValue, right);
+            
+            
+            DBIntType * int_value = (DBIntType *) newValue;
+            return ReturnInsertValue(left, *int_value, right);
 
         }
 
@@ -812,20 +853,21 @@ DBMyIndex::insertValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
     // Falls der aufgerufene Block kein Blattknoten ist --> Passende BlockNo raussuchen und Funktion rekursiv aufrufen
     if (!treeBlock->leaf) {
 
-        TreeIntInnerBlock *treeIntInnerBlock = (TreeIntInnerBlock *) rootB.getDataPtr();
-        treeIntInnerBlock->updatePointers();
+        TreeInnerBlock *treeInnerBlock = getInnerBlockFromDBBACB(rootB); //don't forget to delete
 
-        ReturnIntInsertValue r = ReturnIntInsertValue(0, 0, 0);
-        for (int i = 0; i < treeIntInnerBlock->currentValueCounter; i++) {
+        ReturnInsertValue r = ReturnInsertValue(0, DBIntType(0), 0);
+        for (int i = 0; i < treeInnerBlock->currentValueCounter; i++) {
             // Falls der einzufügende Wert größer ist als der Wert ganz rechts im inneren Knoten --> Letzte BlockNo aufrufen
-            if (value <= treeIntInnerBlock->values[i]) {
-                r = insertValue(treeIntInnerBlock->blockNos[i], value, tid, treeIntInnerBlock->blockNo);
+            // value <= treeInnerBlock->values[i]
+            if (treeInnerBlock->compare(i,value) >= 0) {
+                r = insertValue(treeInnerBlock->getBlockNo(i), value, tid, treeInnerBlock->blockNo);
                 break;
             }
             // Nach der richtigen BlockNo für den einzufügenden Wert suchen
-            if (value > treeIntInnerBlock->values[treeIntInnerBlock->currentValueCounter - 1]) {
-                r = insertValue(treeIntInnerBlock->blockNos[treeIntInnerBlock->currentValueCounter], value, tid,
-                                treeIntInnerBlock->blockNo);
+            // value > treeInnerBlock->values[treeIntInnerBlock->currentValueCounter - 1]
+            if (treeInnerBlock->compare(treeInnerBlock->currentValueCounter-1, value) == -1) {
+                r = insertValue(treeInnerBlock->getBlockNo(treeInnerBlock->currentValueCounter),
+                                value, tid, treeInnerBlock->blockNo);
                 break;
             }
         }
@@ -833,66 +875,26 @@ DBMyIndex::insertValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
         // Wenn der untere Knoten ein BlockNo + Value + BlockNo nach oben gibt, dann muss der Wert + 2 Pointer (=BlockNos) zum inneren Konto hinzugefügt werden
         if (!r.blockNoRight == 0 && !r.blockNoLeft == 0) {
             // Neuen Wert hinzufugen, da Blattknoten gesplitet wurde
-
-            // Prüfen, wo man BlockNo + Value + BlockNo hinzufügen soll
-            for (int i = 0; i < treeIntInnerBlock->currentValueCounter; i++) {
-                if (r.value > treeIntInnerBlock->values[treeIntInnerBlock->currentValueCounter - 1]) {
-                    // std::cout << "Fall 1" << std::endl;
-                    treeIntInnerBlock->values[treeIntInnerBlock->currentValueCounter] = r.value;
-                    treeIntInnerBlock->blockNos[treeIntInnerBlock->currentValueCounter] = r.blockNoLeft;
-                    treeIntInnerBlock->blockNos[treeIntInnerBlock->currentValueCounter + 1] = r.blockNoRight;
-                    break;
-                }
-
-                if (r.value <= treeIntInnerBlock->values[i]) {
-                    //std::cout << "Fall 2" << std::endl;
-                    memcpy(&treeIntInnerBlock->values[i + 1], &treeIntInnerBlock->values[i],
-                           sizeof(int) * (treeIntInnerBlock->currentValueCounter - i));
-                    memcpy(&treeIntInnerBlock->blockNos[i + 2], &treeIntInnerBlock->blockNos[i + 1],
-                           sizeof(BlockNo) * (treeIntInnerBlock->currentValueCounter - i));
-                    treeIntInnerBlock->blockNos[i] = r.blockNoLeft;
-                    treeIntInnerBlock->blockNos[i + 1] = r.blockNoRight;
-                    treeIntInnerBlock->values[i] = r.value;
-                    break;
-                }
-            }
-            treeIntInnerBlock->currentValueCounter++;
-
+            
+            bool split = treeInnerBlock->insertBlockNo(r.blockNoLeft, r.value, r.blockNoRight, false);
             //std::cout << " Elternknoten war fleisig und hat neuen Knoten eingeuefgt" << std::endl;
 
             // Nach dem Einfügen der BlockNo + Value + BlockNo muss mit Pech der Elternknoten gesplitet werden
-            if (treeIntInnerBlock->currentValueCounter >= treeIntInnerBlock->maxValueCounter) {
+            if (split) {
                 // Split des Elternknoten
                 std::cout << "Elternknoten muss gesplitet werden" << std::endl;
-
-
+                
                 DBBACB newInnerBlock = bufMgr.fixNewBlock(file);
-                TreeIntInnerBlock newTreeIntInnerBlock = TreeIntInnerBlock(newInnerBlock.getBlockNo());
+                TreeInnerBlock * newTreeInnerBlock = treeInnerBlock->splitBlock(newInnerBlock.getBlockNo()); //don't forget to delete
 
-                int offset = std::ceil((treeIntInnerBlock->maxValueCounter) / 2);
+                DBAttrType * newParentValue = treeInnerBlock->getValue(treeInnerBlock->currentValueCounter);
+                BlockNo leftBlockNo = treeInnerBlock->blockNo;
+                BlockNo rightBlockNo = newTreeInnerBlock->blockNo;
 
-                treeIntInnerBlock->printAllValues();
-
-
-                // Mach aus 1 inneren Knoten 2 innere Knoten und kopiere ein Teil der Werte + BlockNos
-                memcpy((void *) newTreeIntInnerBlock.values, &(treeIntInnerBlock->values[offset]),
-                       sizeof(int) * (treeIntInnerBlock->maxValueCounter - offset));
-
-                memcpy((void *) newTreeIntInnerBlock.blockNos, &(treeIntInnerBlock->blockNos[offset]),
-                       sizeof(BlockNo) * (treeIntInnerBlock->maxValueCounter - offset + 1));
-
-
-                newTreeIntInnerBlock.currentValueCounter = treeIntInnerBlock->maxValueCounter - offset;
-                treeIntInnerBlock->currentValueCounter = offset - 1;
-
-                int newParentValue = treeIntInnerBlock->values[treeIntInnerBlock->currentValueCounter];
-                int leftBlockNo = treeIntInnerBlock->blockNo;
-                int rightBlockNo = newTreeIntInnerBlock.blockNo;
-
-                newTreeIntInnerBlock.copyBlockToDBBACB(newInnerBlock);
+                newTreeInnerBlock->copyBlockToDBBACB(newInnerBlock);
                 bufMgr.unfixBlock(newInnerBlock);
 
-                treeIntInnerBlock->copyBlockToDBBACB(rootB);
+                treeInnerBlock->copyBlockToDBBACB(rootB);
                 bufMgr.unfixBlock(rootB);
 
                 // Falls es keinen Eltern-Elternknoten gibt --> Neuen Knoten erstellen + diesen als Root markieren
@@ -900,44 +902,50 @@ DBMyIndex::insertValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
 
                     // Neuen Root Knoten erstellen und Werte uebertragen (Pointer, Value, Pointer)
                     DBBACB newRootBlock = bufMgr.fixNewBlock(file);
-                    TreeIntInnerBlock newTreeRootBlock = TreeIntInnerBlock(newRootBlock.getBlockNo());
-                    newTreeRootBlock.values[0] = newParentValue;
-                    newTreeRootBlock.blockNos[0] = leftBlockNo;
-                    newTreeRootBlock.blockNos[1] = rightBlockNo;
-                    newTreeRootBlock.currentValueCounter++;
+                    TreeInnerBlock * newRoot = createNewRoot(newRootBlock.getBlockNo()); //don't forget to delete
+                    newRoot->insertBlockNo(leftBlockNo,*newParentValue,rightBlockNo,true);
 
-                    newTreeRootBlock.copyBlockToDBBACB(newRootBlock);
+                    newRoot->copyBlockToDBBACB(newRootBlock);
                     bufMgr.unfixBlock(newRootBlock);
 
-                    newTreeRootBlock.printAllValues();
+                    //newTreeRootBlock.printAllValues();
 
                     std::cout << " Meta Daten anpassen, da neuer Root Block" << std::endl;
 
                     DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_EXCLUSIVE);
                     TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
-                    startBlock->rootBlockNo = newTreeRootBlock.blockNo;
+                    startBlock->rootBlockNo = newRoot->blockNo;
                     startBlock->copyBlockToDBBACB(metaB);
                     bufMgr.unfixBlock(metaB);
-
-
-                    return ReturnIntInsertValue(0, 0, 0);
+                    
+                    
+                    delete treeInnerBlock;
+                    delete newTreeInnerBlock;
+                    delete newRoot;
+                    
+                    return ReturnInsertValue(0, DBIntType(0), 0);
 
                 }
                 // Falls es noch Eltern-Elternknoten gibt --> Diesem Pointer + Value + Pointer übergeben
-                return ReturnIntInsertValue(leftBlockNo, newParentValue, rightBlockNo);
+                delete treeInnerBlock;
+                delete newTreeInnerBlock;
+                DBIntType * int_value = (DBIntType *) newParentValue;
+                return ReturnInsertValue(leftBlockNo, *int_value, rightBlockNo);
 
             } else {
-                treeIntInnerBlock->copyBlockToDBBACB(rootB);
+                treeInnerBlock->copyBlockToDBBACB(rootB);
                 bufMgr.unfixBlock(rootB);
-                return ReturnIntInsertValue(0, 0, 0);
+                delete treeInnerBlock;
+                return ReturnInsertValue(0, DBIntType(0), 0);
                 // Elternknoten hat neuen Wert bekommen, ist aber nicht voll -> Kein Split bei Eltern-Elternknoten notwendig
             }
         } else {
             // Blattknoten hat kein Split gemacht, also muss Elternknoten auch nicht gesplitet werden
 
-            //treeIntInnerBlock->copyBlockToDBBACB(rootB);
+            //treeInnerBlock->copyBlockToDBBACB(rootB);
             bufMgr.unfixBlock(rootB);
-            return ReturnIntInsertValue(0, 0, 0);
+            delete treeInnerBlock;
+            return ReturnInsertValue(0, DBIntType(0), 0);
         }
     }
 }
@@ -1008,8 +1016,6 @@ void DBMyIndex::initializeIndex() {
     LOG4CXX_INFO(logger, "initializeIndex()");
     if (bufMgr.getBlockCnt(file) != 0)
         throw DBIndexException("can not initializie exisiting table");
-
-
 }
 
 /**
@@ -1025,21 +1031,21 @@ void DBMyIndex::find(const DBAttrType &val, DBListTID &tids) {
 
     DBIntType *t = (DBIntType *) &val;
     std::cout << " find " << t->getVal() << std::endl;
-    findTIDsFirstCall(t->getVal(), tids);
+    findTIDsFirstCall(val, tids);
     printAllBlocks();
 }
 
-void DBMyIndex::findTIDsFirstCall(int value, DBListTID &tids) {
+void DBMyIndex::findTIDsFirstCall(const DBAttrType &val, DBListTID &tids) {
     DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_SHARED);
     TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
     bufMgr.unfixBlock(metaB);
     printAllBlocks();
-    findTIDs(startBlock->rootBlockNo, value, tids, 0);
+    findTIDs(startBlock->rootBlockNo, val, tids, 0);
 }
 
 void
-DBMyIndex::findTIDs(BlockNo startBlockNo, int value, DBListTID &tids, BlockNo parentBlockNo) {
-    std::cout << "FIND VALUE " << value << " StartBlock: " << startBlockNo << std::endl;
+DBMyIndex::findTIDs(BlockNo startBlockNo, const DBAttrType &val, DBListTID &tids, BlockNo parentBlockNo) {
+    std::cout << "FIND VALUE " << val.toString("\t") << " StartBlock: " << startBlockNo << std::endl;
 
 
     DBBACB rootB = bufMgr.fixBlock(file, startBlockNo, LOCK_EXCLUSIVE);
@@ -1047,11 +1053,11 @@ DBMyIndex::findTIDs(BlockNo startBlockNo, int value, DBListTID &tids, BlockNo pa
 
     if (treeBlock->leaf) {
 
-        TreeIntLeafBlock *treeIntLeafBlock = (TreeIntLeafBlock *) rootB.getDataPtr();
-        treeIntLeafBlock->updatePointers();
-        for (int i = 0; i < treeIntLeafBlock->currentValueCounter; i++) {
-            if (treeIntLeafBlock->values[i] == value) {
-                tids.push_back(treeIntLeafBlock->tids[i]);
+        TreeLeafBlock *treeLeafBlock = (TreeLeafBlock *) rootB.getDataPtr();
+        treeLeafBlock->updatePointers();
+        for (int i = 0; i < treeLeafBlock->currentValueCounter; i++) {
+            if (treeLeafBlock->compare(i,val) == 0) {
+                tids.push_back(treeLeafBlock->getTID(i));
             }
         }
         bufMgr.unfixBlock(rootB);
@@ -1060,23 +1066,24 @@ DBMyIndex::findTIDs(BlockNo startBlockNo, int value, DBListTID &tids, BlockNo pa
 
     if (!treeBlock->leaf) {
 
-        TreeIntInnerBlock *treeIntInnerBlock = (TreeIntInnerBlock *) rootB.getDataPtr();
-        treeIntInnerBlock->updatePointers();
+        TreeInnerBlock *treeInnerBlock = (TreeInnerBlock *) rootB.getDataPtr();
+        treeInnerBlock->updatePointers();
 
-        ReturnIntInsertValue r = ReturnIntInsertValue(0, 0, 0);
-        for (int i = 0; i < treeIntInnerBlock->currentValueCounter; i++) {
-            if (value <= treeIntInnerBlock->values[i]) {
-                findTIDs(treeIntInnerBlock->blockNos[i], value, tids, treeIntInnerBlock->blockNo);
+        ReturnInsertValue r = ReturnInsertValue(0, DBIntType(0), 0);
+        
+        // val > values[currentValueCounter-1]
+        if(treeInnerBlock->compare(treeInnerBlock->currentValueCounter-1, val) == -1){
+            findTIDs(treeInnerBlock->getBlockNo(treeInnerBlock->currentValueCounter), val, tids, treeInnerBlock->blockNo);
+            bufMgr.unfixBlock(rootB);
+            return;
+        }
+        
+        for (int i = 0; i < treeInnerBlock->currentValueCounter; i++) {
+            // val <= values[i]
+            if (treeInnerBlock->compare(i, val) >= 0){
+                findTIDs(treeInnerBlock->getBlockNo(i), val, tids, treeInnerBlock->blockNo);
                 bufMgr.unfixBlock(rootB);
                 return;
-            }
-
-            if (value > treeIntInnerBlock->values[treeIntInnerBlock->currentValueCounter - 1]) {
-                findTIDs(treeIntInnerBlock->blockNos[treeIntInnerBlock->currentValueCounter], value, tids,
-                         treeIntInnerBlock->blockNo);
-                bufMgr.unfixBlock(rootB);
-                return;
-
             }
         }
     }
@@ -1093,6 +1100,17 @@ void DBMyIndex::insert(const DBAttrType &val, const TID &tid) {
     printAllBlocks();
 
 
+}
+
+TreeInnerBlock * DBMyIndex::createNewRoot(BlockNo blockNo){
+    switch(attrType){
+        case INT:{
+            return new TreeIntInnerBlock(blockNo);
+        }
+        default:{
+            return (TreeInnerBlock *) nullptr;
+        }
+    }
 }
 
 /**
@@ -1157,6 +1175,15 @@ void TreeIntInnerBlock::copyBlockToDBBACB(DBBACB d) {
     d.setModified();
 }
 
+void TreeIntInnerBlock::copyDBBACBToBlock(DBBACB d){
+    int basicSize = 4 * sizeof(bool) + sizeof(BlockNo) + 2 * sizeof(int);
+    memcpy((void *) &this->leaf, d.getDataPtr(), basicSize);
+    memcpy((void *) this->values, d.getDataPtr() + basicSize + sizeof(int *) + sizeof(BlockNo *),
+    this->maxValueCounter * sizeof(int));
+    memcpy((void *) this->blockNos, d.getDataPtr() + basicSize + sizeof(int *) + sizeof(BlockNo *)
+    + this->maxValueCounter * sizeof(int), (this->maxValueCounter + 1) * sizeof(BlockNo));
+}
+
 void TreeIntInnerBlock::updatePointers() {
     int basicSize = 4 * sizeof(bool) + sizeof(BlockNo) + 2 * sizeof(int);
     values = (int *) (&this->leaf + basicSize + sizeof(int *) + sizeof(BlockNo *));
@@ -1175,6 +1202,49 @@ void TreeIntInnerBlock::insertBlockNo(BlockNo blockNoLeft, int value, BlockNo bl
     this->blockNos[0] = blockNoLeft;
     this->blockNos[1] = blockNoRight;
     this->currentValueCounter++;
+}
+
+bool TreeIntInnerBlock::insertBlockNo(BlockNo blockNoLeft, const DBAttrType &value, BlockNo blockNoRight, bool root){
+    DBIntType * val = (DBIntType *) &value;
+    int int_val = val->getVal();
+    if(root) {
+        this->values[0] = int_val;
+        this->blockNos[0] = blockNoLeft;
+        this->blockNos[1] = blockNoRight;
+        this->currentValueCounter++;
+        return false;
+    }
+    else{
+        // Prüfen, wo man BlockNo + Value + BlockNo hinzufügen soll
+        for (int i = 0; i < this->currentValueCounter; i++) {
+            //value > this->values[this->currentValueCounter - 1])
+            if(this->compare(this->currentValueCounter-1, value) == -1){
+                // std::cout << "Fall 1" << std::endl;
+                this->setValue(this->currentValueCounter, value);
+                this->setBlockNo(this->currentValueCounter, blockNoLeft);
+                this->setBlockNo(this->currentValueCounter+1, blockNoRight);
+                break;
+            }
+            //value <= this->values[i]
+            if(this->compare(i, value) >= 0){
+                memcpy(&this->values[i + 1], &this->values[i],
+                       sizeof(int) * (this->currentValueCounter - i));
+                memcpy(&this->blockNos[i + 2], &this->blockNos[i + 1],
+                       sizeof(BlockNo) * (this->currentValueCounter - i));
+                this->blockNos[i] = blockNoLeft;
+                this->blockNos[i + 1] = blockNoRight;
+                this->values[i] = int_val;
+                break;
+            }
+        }
+        this->currentValueCounter++;
+        if(this->currentValueCounter >= this->maxValueCounter){
+            return true;
+        }
+        else{
+            return false;
+        }
+    }
 }
 
 
@@ -1224,17 +1294,78 @@ void TreeIntInnerBlock::printAllValues() {
     }
 }
 
+int TreeIntInnerBlock::compare(int index, const DBAttrType &val){
+    DBIntType *t = (DBIntType *) &val;
+    int value = t->getVal();
+    if(this->values[index] > value){
+        return 1;
+    }
+    else if(this->values[index] == value){
+        return 0;
+    }
+    else{
+        return -1;
+    }
+}
+
+DBAttrType * TreeIntInnerBlock::getValue(int index){
+    int value = this->values[index];
+    return new DBIntType(value);
+}
+
+void TreeIntInnerBlock::setValue(int index, const DBAttrType &value){
+    DBIntType * int_value = (DBIntType *) &value;
+    this->values[index] = int_value->getVal();
+}
+
+BlockNo TreeIntInnerBlock::getBlockNo(int index){
+    return this->blockNos[index];
+}
+
+void TreeIntInnerBlock::setBlockNo(int index, BlockNo blockNo){
+    this->blockNos[index] = blockNo;
+}
+
+TreeInnerBlock * TreeIntInnerBlock::splitBlock(BlockNo blockNo){
+    int offset = std::ceil((this->maxValueCounter) / 2);
+    TreeIntInnerBlock * newTreeIntInnerBlock = new TreeIntInnerBlock(blockNo);
+    memcpy((void *) newTreeIntInnerBlock->values,
+           (void *) &(this->values[offset]),
+           sizeof(int) * (this->maxValueCounter - offset));
+    
+    memcpy((void *) newTreeIntInnerBlock->blockNos,
+           (void *) &(this->blockNos[offset]),
+           sizeof(BlockNo) * (this->maxValueCounter - offset + 1));
+    
+    this->currentValueCounter = offset - 1;
+    newTreeIntInnerBlock->currentValueCounter = this->maxValueCounter - offset;
+    
+    return newTreeIntInnerBlock;
+}
+
+TreeInnerBlock::~TreeInnerBlock(){}
+TreeLeafBlock::~TreeLeafBlock(){}
 
 void TreeIntLeafBlock::copyBlockToDBBACB(DBBACB d) {
     // std::cout << "BlockNo: " << this->blockNo << " and DBBACB " << d.getBlockNo() << std::endl;
     int basicSize = 4 * sizeof(bool) + sizeof(BlockNo) + 2 * sizeof(int);
     memcpy(d.getDataPtr(), (void *) &this->leaf, basicSize);
-    memcpy(d.getDataPtr() + basicSize + sizeof(int *) + sizeof(BlockNo *), (void *) this->values,
+    memcpy(d.getDataPtr() + basicSize + sizeof(int *)+ sizeof(BlockNo *), (void *) this->values,
            this->maxValueCounter * sizeof(int));
-    memcpy(d.getDataPtr() + basicSize + sizeof(int *) + sizeof(BlockNo *) +
+    memcpy(d.getDataPtr() + basicSize + sizeof(int *)+ sizeof(BlockNo *)+
            this->maxValueCounter * sizeof(int),
            (void *) this->tids, this->maxValueCounter * sizeof(TID));
     d.setModified();
+}
+
+void TreeIntLeafBlock::copyDBBACBToBlock(DBBACB d){
+    int basicSize = 4 * sizeof(bool) + sizeof(BlockNo) + 2 * sizeof(int);
+    memcpy(&this->leaf, d.getDataPtr(), basicSize);
+    memcpy((void *) this->values, d.getDataPtr() + basicSize + sizeof(int *) + sizeof(BlockNo *),
+          this->maxValueCounter * sizeof(int));
+    memcpy((void *) this->tids, d.getDataPtr() + basicSize + sizeof(int *) + sizeof(BlockNo *) +
+    this->maxValueCounter * sizeof(int),
+           this->maxValueCounter * sizeof(TID));
 }
 
 void TreeIntLeafBlock::updatePointers() {
@@ -1244,7 +1375,9 @@ void TreeIntLeafBlock::updatePointers() {
                     (this->maxValueCounter) * sizeof(int));
 }
 
-bool TreeIntLeafBlock::insertTID(int value, TID tid) {
+bool TreeIntLeafBlock::insertTID(const DBAttrType &val, TID tid) {
+    DBIntType * int_val = (DBIntType *) &val;
+    int value = int_val->getVal();
     if (this->currentValueCounter > 0) {
         // Am Ende der Liste hinzufügen
         if (value >= this->values[currentValueCounter - 1]) {
@@ -1304,6 +1437,48 @@ IntUndersizedAndValuePair TreeIntLeafBlock::removeTID(int value, TID tid) {
     }
     IntUndersizedAndValuePair r = IntUndersizedAndValuePair(this->values[0], true);
     return r;
+}
+
+DBAttrType * TreeIntLeafBlock::getValue(int index){
+    int value = this->values[index];
+    return new DBIntType(value);
+}
+
+void TreeIntLeafBlock::setValue(int index, const DBAttrType &val){
+    DBIntType * int_val = (DBIntType *) &val;
+    this->values[index] = int_val->getVal();
+}
+
+TID TreeIntLeafBlock::getTID(int index){
+    return this->tids[index];
+}
+
+void TreeIntLeafBlock::setTID(int index, TID tid){
+    this->tids[index] = tid;
+}
+
+int TreeIntLeafBlock::compare(int index, const DBAttrType &val){
+    DBIntType *t = (DBIntType *) &val;
+    int value = t->getVal();
+    if(this->values[index] > value){
+        return 1;
+    }
+    else if(this->values[index] == value){
+        return 0;
+    }
+    else{
+        return -1;
+    }
+}
+
+TreeLeafBlock * TreeIntLeafBlock::splitBlock(BlockNo blockNo){
+        int offset = std::ceil((this->maxValueCounter)/2);
+        TreeIntLeafBlock *newIntLeafBlock = new TreeIntLeafBlock(blockNo);
+        memcpy((void *) newIntLeafBlock->values, &(this->values[offset]), sizeof(int) * (this->maxValueCounter - offset));
+        memcpy((void *) newIntLeafBlock->tids, &(this->tids[offset]), sizeof(int) * (this->maxValueCounter - offset));
+    
+        this->currentValueCounter = offset;
+        newIntLeafBlock->currentValueCounter = this->maxValueCounter - offset;
 }
 
 

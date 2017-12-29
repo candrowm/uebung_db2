@@ -6,15 +6,15 @@
 
 namespace HubDB {
     namespace Index {
-
-        struct ReturnIntInsertValue {
+        
+        struct ReturnInsertValue {
             BlockNo blockNoLeft;
-            int value;
+            DBIntType value;
             BlockNo blockNoRight;
 
-            ReturnIntInsertValue(BlockNo leftBlockNo, int val, BlockNo rightBlockNo) {
+            ReturnInsertValue(BlockNo leftBlockNo, DBIntType val, BlockNo rightBlockNo) : value(val) {
                 blockNoLeft = leftBlockNo;
-                value = val;
+                //value = val;
                 blockNoRight = rightBlockNo;
             }
         };
@@ -93,7 +93,7 @@ namespace HubDB {
 
             uint calculateMaxCounter(AttrTypeEnum attrType, bool leaf);
 
-            void printAllBlocks();
+            //virtual void printAllBlocks();
         };
 
         /*      START BLOCK      */
@@ -106,26 +106,48 @@ namespace HubDB {
             }
             void copyBlockToDBBACB(DBBACB d);
         };
+        
+        /*      INNER BLOCK     */
+        class TreeInnerBlock : public TreeBlock{
+        public:
+            TreeInnerBlock(BlockNo blockNo) : TreeBlock(blockNo){}
+            virtual ~TreeInnerBlock();
+            virtual void copyBlockToDBBACB(DBBACB d) = 0;
+            virtual void updatePointers() = 0;
+            virtual void printAllValues() = 0;
+            //virtual bool insertBlockNo(const DBAttrType &val, BlockNo blockNo);
+            virtual bool insertBlockNo(BlockNo blockNoLeft, const DBAttrType &val , BlockNo BlockNoRight, bool root) = 0;
+            virtual DBAttrType * getValue(int index) = 0;
+            virtual void setValue(int index, const DBAttrType &val) = 0;
+            virtual BlockNo getBlockNo(int index) = 0;
+            virtual void setBlockNo(int index, BlockNo blockNo) = 0;
+            virtual int compare(int index, const DBAttrType &val) = 0 ;
+            virtual TreeInnerBlock * splitBlock(BlockNo blockNo) = 0;
+    
+        };
 
         /*      INT BLOCK      */
-        class TreeIntInnerBlock : public TreeBlock {
+        class TreeIntInnerBlock : public TreeInnerBlock {
         public:
             int *values;
             BlockNo *blockNos;
 
 
         public:
-            TreeIntInnerBlock(BlockNo blockNo) : TreeBlock(blockNo) {
+            TreeIntInnerBlock(BlockNo blockNo) : TreeInnerBlock(blockNo) {
                 this->intBlock = true;
                 this->maxValueCounter = TreeBlock::calculateMaxCounter(AttrTypeEnum::INT, false);
                 this->values = new int[maxValueCounter];
-                this->blockNos = new BlockNo[maxValueCounter];
+                this->blockNos = new BlockNo[maxValueCounter+1];
                 for (int i = 0; i < maxValueCounter; i++) {
                     values[i] = i;
                     blockNos[i] = i;
                 }
             };
-
+            
+            int compare(int index, const DBAttrType &val);
+            
+            void copyDBBACBToBlock(DBBACB d);
             void copyBlockToDBBACB(DBBACB d);
             void updatePointers();
 
@@ -138,35 +160,70 @@ namespace HubDB {
             bool insertBlockNo(int value, BlockNo blockNo);
 
             void insertBlockNo(BlockNo blockNoLeft, int value, BlockNo BlockNoRight);
+            bool insertBlockNo(BlockNo blockNoLeft, const DBAttrType &val, BlockNo blockNoRight, bool root);
 
             IntValueAndTIDPair removeSmallestBlockNo();
 
             IntValueAndTIDPair removeBiggestBlockNo();
+            
+            DBAttrType * getValue(int index);
+            void setValue(int index, const DBAttrType &val);
+            BlockNo getBlockNo(int index);
+            void setBlockNo(int index, BlockNo blockNo);
+            
+            TreeInnerBlock * splitBlock(BlockNo blockNo);
         };
-        class TreeIntLeafBlock : public TreeBlock {
+        
+        /*      LEAF BLOCK      */
+        class TreeLeafBlock : public TreeBlock{
+        public:
+            TreeLeafBlock(BlockNo blockNo) : TreeBlock(blockNo) {}
+            virtual ~TreeLeafBlock();
+            
+            virtual void copyBlockToDBBACB(DBBACB d) = 0;
+            virtual void updatePointers() = 0;
+            virtual void printAllValues() = 0;
+    
+            //virtual void insertTID(TID tid) = 0;
+            virtual bool insertTID(const DBAttrType &val, TID tid) = 0;
+            
+            virtual DBAttrType * getValue(int index) = 0;
+            virtual void setValue(int index, const DBAttrType &val) = 0;
+            virtual TID getTID(int index) = 0;
+            virtual void setTID(int index, TID tid) = 0;
+            virtual int compare(int index, const DBAttrType &val) = 0;
+            virtual TreeLeafBlock * splitBlock(BlockNo blockno) = 0;
+            
+            
+        };
+        
+        class TreeIntLeafBlock : public TreeLeafBlock {
         public:
             int *values;
             TID *tids;
 
         public:
-            TreeIntLeafBlock(BlockNo blockNo) : TreeBlock(blockNo) {
+            TreeIntLeafBlock(BlockNo blockNo) : TreeLeafBlock(blockNo) {
                 this->intBlock = true;
                 this->leaf = true;
                 this->maxValueCounter = TreeBlock::calculateMaxCounter(AttrTypeEnum::INT, true);
                 this->values = new int[maxValueCounter];
                 this->tids = new TID[maxValueCounter];
                 for (int i = 0; i < maxValueCounter; i++) {
-                   // values[i] = i;
+                    values[i] = 7;
                     tids[i] = TID();
                 }
             };
+            
+            int compare(int index, const DBAttrType &val);
 
+            void copyDBBACBToBlock(DBBACB d);
             void copyBlockToDBBACB(DBBACB d);
             void updatePointers();
 
-            void insertTID(TID tid);
+            //void insertTID(TID tid);
 
-            bool insertTID(int value, TID tid);
+            bool insertTID(const DBAttrType &val, TID tid);
 
             void printAllValues();
 
@@ -180,10 +237,17 @@ namespace HubDB {
             IntValueAndTIDPair removeBiggestTID();
 
             IntValueAndTIDPair removeSmallestTID();
+            
+            DBAttrType * getValue(int index);
+            void setValue(int index, const DBAttrType &val);
+            TID getTID(int index);
+            void setTID(int index, TID tid);
+            TreeLeafBlock * splitBlock(BlockNo blockNo);
         };
 
-
+        
         /*      DOUBLE BLOCK      */
+        
         class TreeDoubleInnerBlock : public TreeBlock {
         public:
             double *values;
@@ -296,8 +360,15 @@ namespace HubDB {
             bool isIndexNonUniqueAble() { return true; };
 
             void unfixBACBs(bool dirty);
+            
+            TreeInnerBlock * getInnerBlockFromDBBACB(DBBACB d);
+            TreeInnerBlock * splitInnerBlock(TreeInnerBlock *treeInnerBlock, BlockNo blockNo);
+            TreeLeafBlock * getLeafBlockFromDBBACB(DBBACB d);
+            TreeLeafBlock * splitLeafBlock(TreeLeafBlock *treeLeafBlock, BlockNo blockNo);
 
             static int registerClass();
+            
+            TreeInnerBlock * createNewRoot(BlockNo blockNo);
 
         private:
 
@@ -310,7 +381,7 @@ namespace HubDB {
             void insertValue(const DBAttrType &val, const TID &tid, BlockNo parentBlockNo);
 
 
-            ReturnIntInsertValue insertValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo parentBlockNo);
+            ReturnInsertValue insertValue(BlockNo startBlockNo, const DBAttrType &val, const TID &tid, BlockNo parentBlockNo);
 
             void printAllBlocks();
 
@@ -324,13 +395,13 @@ namespace HubDB {
 
             IntUndersizedAndValuePair removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo parentBlockNo);
 
-            void findTIDS(int val, DBListTID &tids);
+            void findTIDS(const DBAttrType &val, DBListTID &tids);
 
-            void findTIDs(BlockNo startBlockNo, int value, const TID &tid, BlockNo parentBlockNo);
+            void findTIDs(BlockNo startBlockNo, const DBAttrType &val, const TID &tid, BlockNo parentBlockNo);
 
-            void findTIDs(BlockNo startBlockNo, int value, DBListTID &tids, BlockNo parentBlockNo);
+            void findTIDs(BlockNo startBlockNo, const DBAttrType &val, DBListTID &tids, BlockNo parentBlockNo);
 
-            void findTIDsFirstCall(int value, DBListTID &tids);
+            void findTIDsFirstCall(const DBAttrType &val, DBListTID &tids);
         };
     }
 }
