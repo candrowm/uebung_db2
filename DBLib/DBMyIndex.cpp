@@ -775,7 +775,6 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
     // Falls der Block ein Blattknoten ist --> Wert einfügen
     if (treeBlock->leaf) {
         TreeLeafBlock *treeLeafBlock = getLeafBlockFromDBBACB(rootB); //don't forget to delete
-        //treeLeafBlock->updatePointers();
         bool split = treeLeafBlock->insertTID(value, tid);
 
         if (!split) {
@@ -783,7 +782,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
             treeLeafBlock->copyBlockToDBBACB(rootB);
             bufMgr.unfixBlock(rootB);
             delete treeLeafBlock;
-            return ReturnInsertValue(0, DBIntType(0), 0);
+            return ReturnInsertValue(0, DBIntType(0), 0, attrType);
         }
 
 
@@ -827,7 +826,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
                 bufMgr.unfixBlock(newLeafBlock);
                 bufMgr.unfixBlock(rootB);
 
-                return ReturnInsertValue(0, DBIntType(0), 0);
+                return ReturnInsertValue(0, DBIntType(0), 0, attrType);
             }
 
             // Andernfalls: Es gibt Elternknoden --> Diesem Pointer + Value + Pointer uebergeben
@@ -843,10 +842,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
             bufMgr.unfixBlock(newLeafBlock);
             bufMgr.unfixBlock(rootB);
             
-            
-            DBIntType * int_value = (DBIntType *) newValue;
-            return ReturnInsertValue(left, *int_value, right);
-
+            return ReturnInsertValue(left, *newValue, right, attrType);
         }
 
     }
@@ -855,7 +851,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
 
         TreeInnerBlock *treeInnerBlock = getInnerBlockFromDBBACB(rootB); //don't forget to delete
 
-        ReturnInsertValue r = ReturnInsertValue(0, DBIntType(0), 0);
+        ReturnInsertValue r = ReturnInsertValue(0, DBIntType(0), 0, attrType);
         for (int i = 0; i < treeInnerBlock->currentValueCounter; i++) {
             // Falls der einzufügende Wert größer ist als der Wert ganz rechts im inneren Knoten --> Letzte BlockNo aufrufen
             // value <= treeInnerBlock->values[i]
@@ -876,7 +872,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
         if (!r.blockNoRight == 0 && !r.blockNoLeft == 0) {
             // Neuen Wert hinzufugen, da Blattknoten gesplitet wurde
             
-            bool split = treeInnerBlock->insertBlockNo(r.blockNoLeft, r.value, r.blockNoRight, false);
+            bool split = treeInnerBlock->insertBlockNo(r.blockNoLeft, r.getValue(attrType), r.blockNoRight, false);
             //std::cout << " Elternknoten war fleisig und hat neuen Knoten eingeuefgt" << std::endl;
 
             // Nach dem Einfügen der BlockNo + Value + BlockNo muss mit Pech der Elternknoten gesplitet werden
@@ -923,20 +919,20 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
                     delete newTreeInnerBlock;
                     delete newRoot;
                     
-                    return ReturnInsertValue(0, DBIntType(0), 0);
+                    return ReturnInsertValue(0, DBIntType(0), 0, attrType);
 
                 }
                 // Falls es noch Eltern-Elternknoten gibt --> Diesem Pointer + Value + Pointer übergeben
                 delete treeInnerBlock;
                 delete newTreeInnerBlock;
-                DBIntType * int_value = (DBIntType *) newParentValue;
-                return ReturnInsertValue(leftBlockNo, *int_value, rightBlockNo);
+                //DBIntType * int_value = (DBIntType *) newParentValue;
+                return ReturnInsertValue(leftBlockNo, *newParentValue, rightBlockNo, attrType);
 
             } else {
                 treeInnerBlock->copyBlockToDBBACB(rootB);
                 bufMgr.unfixBlock(rootB);
                 delete treeInnerBlock;
-                return ReturnInsertValue(0, DBIntType(0), 0);
+                return ReturnInsertValue(0, DBIntType(0), 0, attrType);
                 // Elternknoten hat neuen Wert bekommen, ist aber nicht voll -> Kein Split bei Eltern-Elternknoten notwendig
             }
         } else {
@@ -945,7 +941,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
             //treeInnerBlock->copyBlockToDBBACB(rootB);
             bufMgr.unfixBlock(rootB);
             delete treeInnerBlock;
-            return ReturnInsertValue(0, DBIntType(0), 0);
+            return ReturnInsertValue(0, DBIntType(0), 0, attrType);
         }
     }
 }
