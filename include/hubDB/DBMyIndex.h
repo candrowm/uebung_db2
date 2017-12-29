@@ -9,13 +9,44 @@ namespace HubDB {
         
         struct ReturnInsertValue {
             BlockNo blockNoLeft;
-            DBIntType value;
+            DBIntType int_value;
+            DBDoubleType double_value;
+            DBVCharType vchar_value;
             BlockNo blockNoRight;
 
-            ReturnInsertValue(BlockNo leftBlockNo, DBIntType val, BlockNo rightBlockNo) : value(val) {
+            ReturnInsertValue(BlockNo leftBlockNo, const DBAttrType &val, BlockNo rightBlockNo, AttrTypeEnum attrType):
+                    int_value(DBIntType(0)), double_value(DBDoubleType(0.0)), vchar_value(DBVCharType("0")){
                 blockNoLeft = leftBlockNo;
-                //value = val;
                 blockNoRight = rightBlockNo;
+                switch(attrType) {
+                    case INT: {
+                        int value = ((DBIntType *) &val)->getVal();
+                        int_value = DBIntType(value);
+                        break;
+                    }
+                    case DOUBLE: {
+                        double value = ((DBDoubleType *) &val)->getVal();
+                        double_value = DBDoubleType(value);
+                        break;
+                    }
+                    case VCHAR: {
+                        string value = ((DBVCharType *) &val)->getVal();
+                        vchar_value = DBVCharType(&value[0]);
+                        break;
+                    }
+                }
+            }
+
+            DBAttrType& getValue(AttrTypeEnum attrType){
+                switch(attrType) {
+                    case INT: {
+                        return int_value;
+                    }
+                    default: {
+                        return int_value;
+                        break;
+                    }
+                }
             }
         };
 
@@ -362,9 +393,9 @@ namespace HubDB {
             void unfixBACBs(bool dirty);
             
             TreeInnerBlock * getInnerBlockFromDBBACB(DBBACB d);
-            TreeInnerBlock * splitInnerBlock(TreeInnerBlock *treeInnerBlock, BlockNo blockNo);
             TreeLeafBlock * getLeafBlockFromDBBACB(DBBACB d);
-            TreeLeafBlock * splitLeafBlock(TreeLeafBlock *treeLeafBlock, BlockNo blockNo);
+            //ReturnInsertValue * getReturnInsertValue(BlockNo leftBlockNo, DBAttrType *val, BlockNo rightBlockNo);
+
 
             static int registerClass();
             
