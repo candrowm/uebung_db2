@@ -1023,25 +1023,25 @@ void DBMyIndex::initializeIndex() {
  */
 void DBMyIndex::find(const DBAttrType &val, DBListTID &tids) {
     LOG4CXX_INFO(logger, "find()");
-    LOG4CXX_DEBUG(logger, "val:\n" + val.toString("\t"));
+    //LOG4CXX_DEBUG(logger, "val:\n" + val.toString("\t"));
 
     DBIntType *t = (DBIntType *) &val;
     std::cout << " find " << t->getVal() << std::endl;
     findTIDsFirstCall(val, tids);
-    printAllBlocks();
+    //printAllBlocks();
 }
 
 void DBMyIndex::findTIDsFirstCall(const DBAttrType &val, DBListTID &tids) {
     DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_SHARED);
     TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
     bufMgr.unfixBlock(metaB);
-    printAllBlocks();
+    //printAllBlocks();
     findTIDs(startBlock->rootBlockNo, val, tids, 0);
 }
 
 void
 DBMyIndex::findTIDs(BlockNo startBlockNo, const DBAttrType &val, DBListTID &tids, BlockNo parentBlockNo) {
-    std::cout << "FIND VALUE " << val.toString("\t") << " StartBlock: " << startBlockNo << std::endl;
+    //std::cout << "FIND VALUE " << val.toString("\t") << " StartBlock: " << startBlockNo << std::endl;
 
 
     DBBACB rootB = bufMgr.fixBlock(file, startBlockNo, LOCK_EXCLUSIVE);
@@ -1049,28 +1049,27 @@ DBMyIndex::findTIDs(BlockNo startBlockNo, const DBAttrType &val, DBListTID &tids
 
     if (treeBlock->leaf) {
 
-        TreeLeafBlock *treeLeafBlock = (TreeLeafBlock *) rootB.getDataPtr();
-        treeLeafBlock->updatePointers();
+        TreeLeafBlock *treeLeafBlock = getLeafBlockFromDBBACB(rootB); //don't forget to delete
         for (int i = 0; i < treeLeafBlock->currentValueCounter; i++) {
             if (treeLeafBlock->compare(i,val) == 0) {
                 tids.push_back(treeLeafBlock->getTID(i));
             }
         }
         bufMgr.unfixBlock(rootB);
+        delete treeLeafBlock;
         return;
     }
 
     if (!treeBlock->leaf) {
+        TreeInnerBlock *treeInnerBlock = getInnerBlockFromDBBACB(rootB); //don't forget to delete
 
-        TreeInnerBlock *treeInnerBlock = (TreeInnerBlock *) rootB.getDataPtr();
-        treeInnerBlock->updatePointers();
-
-        ReturnInsertValue r = ReturnInsertValue(0, DBIntType(0), 0);
+        ReturnInsertValue r = ReturnInsertValue(0, DBIntType(0), 0, attrType);
         
         // val > values[currentValueCounter-1]
         if(treeInnerBlock->compare(treeInnerBlock->currentValueCounter-1, val) == -1){
             findTIDs(treeInnerBlock->getBlockNo(treeInnerBlock->currentValueCounter), val, tids, treeInnerBlock->blockNo);
             bufMgr.unfixBlock(rootB);
+            delete treeInnerBlock;
             return;
         }
         
@@ -1079,6 +1078,7 @@ DBMyIndex::findTIDs(BlockNo startBlockNo, const DBAttrType &val, DBListTID &tids
             if (treeInnerBlock->compare(i, val) >= 0){
                 findTIDs(treeInnerBlock->getBlockNo(i), val, tids, treeInnerBlock->blockNo);
                 bufMgr.unfixBlock(rootB);
+                delete treeInnerBlock;
                 return;
             }
         }
