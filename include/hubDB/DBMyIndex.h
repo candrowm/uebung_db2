@@ -175,6 +175,10 @@ namespace HubDB {
                     blockNos[i] = i;
                 }
             };
+            ~TreeIntInnerBlock(){
+                delete[] values;
+                delete[] blockNos;
+            }
             
             int compare(int index, const DBAttrType &val);
             
@@ -241,10 +245,14 @@ namespace HubDB {
                 this->values = new int[maxValueCounter];
                 this->tids = new TID[maxValueCounter];
                 for (int i = 0; i < maxValueCounter; i++) {
-                    values[i] = 7;
+                    values[i] = 0;
                     tids[i] = TID();
                 }
             };
+            ~TreeIntLeafBlock(){
+                delete[] values;
+                delete[] tids;
+            }
             
             int compare(int index, const DBAttrType &val);
 
@@ -295,6 +303,10 @@ namespace HubDB {
                     blockNos[i] = i;
                 }
             };
+            ~TreeDoubleInnerBlock(){
+                delete[] values;
+                delete[] blockNos;
+            }
 
             void copyBlockToDBBACB(DBBACB d);
             void updatePointers();
@@ -318,6 +330,10 @@ namespace HubDB {
                     tids[i] = TID();
                 }
             };
+            ~TreeDoubleLeafBlock(){
+                delete[] values;
+                delete[] tids;
+            }
 
             void copyBlockToDBBACB(DBBACB d);
             void updatePointers();
@@ -340,6 +356,10 @@ namespace HubDB {
                     blockNos[i] = i;
                 }
             };
+            ~TreeVarCharInnerBlock(){
+                delete[] values;
+                delete[] blockNos;
+            }
 
             void copyBlockToDBBACB(DBBACB d);
             void updatePointers();
@@ -363,6 +383,10 @@ namespace HubDB {
                     tids[i] = TID();
                 }
             };
+            ~TreeVarCharLeafBlock(){
+                delete[] values;
+                delete[] tids;
+            }
 
             void copyBlockToDBBACB(DBBACB d);
             void updatePointers();

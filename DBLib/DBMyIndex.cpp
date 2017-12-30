@@ -830,6 +830,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
                 delete newRoot;
                 delete newTreeLeafBlock;
                 delete treeLeafBlock;
+                delete newValue;
                 
                 std::cout << " Meta Block anpassen" << std::endl;
                 bufMgr.unfixBlock(newInnerBlock);
@@ -852,8 +853,10 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
             
             bufMgr.unfixBlock(newLeafBlock);
             bufMgr.unfixBlock(rootB);
-            
-            return ReturnInsertValue(left, *newValue, right, attrType);
+
+            ReturnInsertValue r = ReturnInsertValue(left, *newValue, right, attrType);
+            delete newValue;
+            return r;
         }
 
     }
@@ -929,6 +932,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
                     delete treeInnerBlock;
                     delete newTreeInnerBlock;
                     delete newRoot;
+                    delete newParentValue;
                     
                     return ReturnInsertValue(0, DBIntType(0), 0, attrType);
 
@@ -936,8 +940,10 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
                 // Falls es noch Eltern-Elternknoten gibt --> Diesem Pointer + Value + Pointer übergeben
                 delete treeInnerBlock;
                 delete newTreeInnerBlock;
-                //DBIntType * int_value = (DBIntType *) newParentValue;
-                return ReturnInsertValue(leftBlockNo, *newParentValue, rightBlockNo, attrType);
+                
+                ReturnInsertValue r = ReturnInsertValue(leftBlockNo, *newParentValue, rightBlockNo, attrType);
+                delete newParentValue;
+                return r;
 
             } else {
                 treeInnerBlock->copyBlockToDBBACB(rootB);
@@ -1164,7 +1170,7 @@ void *createDBMyIndex(int nArgs, va_list &ap) {
 }
 
 void TreeStartBlock::copyBlockToDBBACB(DBBACB d) {
-    memcpy(d.getDataPtr(), (void *) &this->blockNo, sizeof(BlockNo) + sizeof(rootBlockNo));
+    memmove(d.getDataPtr(), (void *) &this->blockNo, sizeof(BlockNo) + sizeof(rootBlockNo));
     d.setModified();
 }
 
