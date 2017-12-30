@@ -55,22 +55,31 @@ DBMyIndex::DBMyIndex(DBBufferMgr &bufferMgr, DBFile &file,
         bufMgr.unfixBlock(metaBlock);
 
         rootNode.copyBlockToDBBACB(rootBlock);
-        //TreeIntLeafBlock someIntLeafBlock = (TreeIntLeafBlock) *rootBlock.getDataPtr();
-        TreeLeafBlock * someTreeBlock = getLeafBlockFromDBBACB(rootBlock);
-        //Note: dont forget to delete someTreeBlock !
-        delete someTreeBlock;
         bufMgr.unfixBlock(rootBlock);
     }
 
     // TestZwecke
-    DBIntType * one = new DBIntType(1);
-    DBIntType * two = new DBIntType(2);
-    DBIntType * five = new DBIntType(5);
-    DBIntType * ten = new DBIntType(10);
+
+    /*
     insertValueFirstCall(1, TID());
     insertValueFirstCall(2, TID());
     insertValueFirstCall(5, TID());
     insertValueFirstCall(10, TID());
+    insertValueFirstCall(7, TID());
+    insertValueFirstCall(11,TID());
+    insertValueFirstCall(12,TID());
+    insertValueFirstCall(9,TID());
+     */
+    for(int i = 20; i < 50; i++){
+        insertValueFirstCall(i,TID());
+    }
+    DBListTID tids = DBListTID(0);
+
+    for(int i = 0; i < 70; i++){
+        find(DBIntType(i), tids);
+    }
+    cout << tids.size() << endl;
+
     printAllBlocks();
     /*
     insertValueFirstCall(17, TID());
@@ -162,14 +171,16 @@ void DBMyIndex::printAllBlocks() {
             DBBACB fRoot = bufMgr.fixBlock(file, i, LOCK_SHARED);
             TreeBlock *t = (TreeBlock *) fRoot.getDataPtr();
             if (!t->leaf) {
-                TreeInnerBlock *fRootBlock = getInnerBlockFromDBBACB(fRoot);
+                TreeInnerBlock *treeInnerBlock = getInnerBlockFromDBBACB(fRoot);
                 //fRootBlock->updatePointers();
-                fRootBlock->printAllValues();
+                treeInnerBlock->printAllValues();
+                delete treeInnerBlock;
             }
             if (t->leaf) {
                 TreeLeafBlock *treeLeafBlock = getLeafBlockFromDBBACB(fRoot);
                 //treeLeafBlock->updatePointers();
                 treeLeafBlock->printAllValues();
+                delete treeLeafBlock;
             }
             bufMgr.unfixBlock(fRoot);
         } catch (int e) {
