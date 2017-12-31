@@ -58,13 +58,13 @@ namespace HubDB {
                 *(getNextFreeBlockNoPointer(block)) = nextFreeBlockNo;
             }
 
-        private:
+        protected:
+            int *getBlockArtPointer(DBBACB &block) const { return reinterpret_cast<int *>(block.getDataPtr()); }
+
             BlockNo *getNextFreeBlockNoPointer(DBBACB &block) const {
-                int *pointerToNextFreeBlockNoField = reinterpret_cast<int *>(block.getDataPtr()) + 1;
+                int *pointerToNextFreeBlockNoField = getBlockArtPointer(block) + 1;
                 return reinterpret_cast<BlockNo *>(pointerToNextFreeBlockNoField);
             }
-
-            int *getBlockArtPointer(DBBACB &block) const { return reinterpret_cast<int *>(block.getDataPtr()); }
         };
 
         class MetaBlockView : public BlockView {
@@ -96,8 +96,7 @@ namespace HubDB {
 
         private:
             BlockNo *getTreeRootNodeBlockNoPointer(DBBACB &metaBlock) const {
-                int *pointerToRootNodeIndicatorField = reinterpret_cast<int *>(metaBlock.getDataPtr()) + 2;
-                return reinterpret_cast<BlockNo *>(pointerToRootNodeIndicatorField);
+                return getNextFreeBlockNoPointer(metaBlock) + 1;
             }
 
             int treeEmptyValue = 0;
