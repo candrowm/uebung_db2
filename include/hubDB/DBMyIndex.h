@@ -17,73 +17,90 @@ namespace HubDB {
         class BlockView {
         public:
             bool isMetaBlock(DBBACB &block) {
-                int blockArt = (*reinterpret_cast<int *>(block.getDataPtr()));
+                int blockArt = (*getBlockArtPointer(block));
                 return blockArt == MetaBlock;
             }
 
             bool isLeafBlock(DBBACB &block) {
-                int blockArt = (*reinterpret_cast<int *>(block.getDataPtr()));
+                int blockArt = (*getBlockArtPointer(block));
                 return blockArt == LeafNode;
             }
 
             bool isInnerBlock(DBBACB &block) {
-                int blockArt = (*reinterpret_cast<int *>(block.getDataPtr()));
+                int blockArt = (*getBlockArtPointer(block));
                 return blockArt == InnerNode;
             }
 
             void setBlockToMetaBlock(DBBACB &block) {
-                int *blockArtPointer = reinterpret_cast<int *>(block.getDataPtr());
+                int *blockArtPointer = getBlockArtPointer(block);
                 *blockArtPointer = MetaBlock;
             }
 
-            //Result == 0 bedeutet, dass es keinen weiteren freien Block gibt
+            void setBlockToLeafBlock(DBBACB &block) {
+                int *blockArtPointer = getBlockArtPointer(block);
+                *blockArtPointer = LeafNode;
+            }
+
+            void setBlockToInnerBlock(DBBACB &block) {
+                int *blockArtPointer = getBlockArtPointer(block);
+                *blockArtPointer = InnerNode;
+            }
+
+            bool isNextFreeBlockExist(DBBACB &block) {
+                return getNextFreeBlockNo(block) != 0;
+            }
+
             BlockNo getNextFreeBlockNo(DBBACB &block) {
-                int *pointerToNextFreeBlockNoField = reinterpret_cast<int *>(block.getDataPtr()) + 1;
-                return *(reinterpret_cast<BlockNo *>(pointerToNextFreeBlockNoField));
+                return *(getNextFreeBlockNoPointer(block));
             }
 
             void setNextFreeBlockNoFieldTo(DBBACB &block, BlockNo nextFreeBlockNo) {
-                int *nextFreeBlockNoFieldPointer = reinterpret_cast<int *>(block.getDataPtr()) + 1;
-                *(reinterpret_cast<BlockNo *>(nextFreeBlockNoFieldPointer)) = nextFreeBlockNo;
+                *(getNextFreeBlockNoPointer(block)) = nextFreeBlockNo;
             }
+
+        private:
+            BlockNo *getNextFreeBlockNoPointer(DBBACB &block) const {
+                int *pointerToNextFreeBlockNoField = reinterpret_cast<int *>(block.getDataPtr()) + 1;
+                return reinterpret_cast<BlockNo *>(pointerToNextFreeBlockNoField);
+            }
+
+            int *getBlockArtPointer(DBBACB &block) const { return reinterpret_cast<int *>(block.getDataPtr()); }
         };
 
         class MetaBlockView : public BlockView {
         public:
             BlockNo getRootNodeBlockNo(DBBACB &metaBlock) {
-                int *pointerToRootNodeIndicatorField = reinterpret_cast<int *>(metaBlock.getDataPtr()) + 2;
-                return *(reinterpret_cast<BlockNo *>(pointerToRootNodeIndicatorField));
-            }
-
-            bool isBTreeEmpty(DBBACB &metaBlock) {
-                int *pointerToTreeEmptinessField = reinterpret_cast<int *>(metaBlock.getDataPtr()) + 3;
-                return *pointerToTreeEmptinessField == treeIsEmptyValue;
+                return *(getTreeRootNodeBlockNoPointer(metaBlock));
             }
 
             void setRootNodeBlockNo(DBBACB &metaBlock, BlockNo blockNo) {
-                int *pointerToRootNodeIndicatorField = reinterpret_cast<int *>(metaBlock.getDataPtr()) + 2;
-                *(reinterpret_cast<BlockNo *>(pointerToRootNodeIndicatorField)) = blockNo;
+                *(getTreeRootNodeBlockNoPointer(metaBlock)) = blockNo;
             }
 
-            void setTreeEmptiness(DBBACB &metaBlock, bool treeIsEmpty) {
-                int *pointerToTreeEmptinessField = reinterpret_cast<int *>(metaBlock.getDataPtr()) + 3;
-                if (treeIsEmpty) {
-                    *pointerToTreeEmptinessField = treeIsEmptyValue;
-                } else {
-                    *pointerToTreeEmptinessField = 0;
-                }
+
+            bool isBTreeEmpty(DBBACB &metaBlock) {
+                return *(getTreeRootNodeBlockNoPointer(metaBlock)) == treeEmptyValue;
+            }
+
+            void setTreeToEmpty(DBBACB &metaBlock) {
+                setRootNodeBlockNo(metaBlock, treeEmptyValue);
             }
 
             void initializeIndex(DBBACB &firstBlock) {
                 setBlockToMetaBlock(firstBlock);
-                setNextFreeBlockNoFieldTo(firstBlock, 0);
-                setRootNodeBlockNo(firstBlock, 0);
-                setTreeEmptiness(firstBlock, true);
+                setNextFreeBlockNoFieldTo(firstBlock, treeEmptyValue);
+                setRootNodeBlockNo(firstBlock, treeEmptyValue);
+                setTreeToEmpty(firstBlock);
                 firstBlock.setModified();
             }
 
         private:
-            int treeIsEmptyValue = 1;
+            BlockNo *getTreeRootNodeBlockNoPointer(DBBACB &metaBlock) const {
+                int *pointerToRootNodeIndicatorField = reinterpret_cast<int *>(metaBlock.getDataPtr()) + 2;
+                return reinterpret_cast<BlockNo *>(pointerToRootNodeIndicatorField);
+            }
+
+            int treeEmptyValue = 0;
         };
 
         class NodeBlockView : public BlockView {

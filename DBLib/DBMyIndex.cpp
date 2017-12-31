@@ -18,8 +18,9 @@ void DBMyIndex::initializeIndex() {
 
     DBBACB firstBlock = bufMgr.fixNewBlock(file);
     metaBlockView.initializeIndex(firstBlock);
-    //firstBlock.setModified();
+    firstBlock.setModified();
     bufMgr.unfixBlock(firstBlock);
+    bufMgr.flushBlock(firstBlock);
 }
 
 void DBMyIndex::find(const DBAttrType &val, DBListTID &tids) {
