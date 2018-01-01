@@ -11,6 +11,7 @@ DBMyIndex::DBMyIndex(DBBufferMgr &bufferMgr, DBFile &file, AttrTypeEnum attrType
         bufferMgr, file, attrType, mode, unique), nodeBlockView(attrType) {
 }
 
+
 void DBMyIndex::initializeIndex() {
     if (bufMgr.getBlockCnt(file) != 0) {
         throw DBIndexException("can not initializie exisiting table");
@@ -24,7 +25,7 @@ void DBMyIndex::initializeIndex() {
 }
 
 void DBMyIndex::find(const DBAttrType &val, DBListTID &tids) {
-    DBBACB metaBlock = bufMgr.fixBlock(file, rootBlockNo, DBBCBLockMode::LOCK_SHARED);
+    DBBACB metaBlock = bufMgr.fixBlock(file, metaBlockNo, DBBCBLockMode::LOCK_SHARED);
     if (metaBlockView.isBTreeEmpty(metaBlock)) {
         return;
     }
@@ -46,8 +47,39 @@ void DBMyIndex::find(const DBAttrType &val, DBListTID &tids) {
 }
 
 void DBMyIndex::insert(const DBAttrType &val, const TID &tid) {
+    DBBACB metaBlock = bufMgr.fixBlock(file, metaBlockNo, DBBCBLockMode::LOCK_EXCLUSIVE);
+    DBBACB rootBlock = getRootBlockExclusively(metaBlock);
+    metaBlockView.setRootNodeBlockNo(metaBlock, rootBlock.getBlockNo());
+
+    if (nodeBlockView.isLeafBlock(rootBlock)) {
+        int numberOfExistingKeys = nodeBlockView.getNumberOfKeysExistingInNode(rootBlock);
+        if (numberOfExistingKeys == nodeBlockView.getMaxKeysPerNode(rootBlock)) {
+            //TODO SPLIT
+        } else {
+            nodeBlockView.addValueToLeafNodeWithoutSplit(rootBlock, val, tid);
+        }
+        bufMgr.unfixBlock(rootBlock);
+        bufMgr.unfixBlock(metaBlock);
+        bufMgr.flushBlock(rootBlock);
+        bufMgr.flushBlock(metaBlock);
+        return;
+    }
 
 }
+
+
+
+DBBACB DBMyIndex::getRootBlockExclusively(DBBACB metaBlock) {
+    if (metaBlockView.isBTreeEmpty(metaBlock)) {
+        //TODO freien Block suchen
+
+        DBBACB rootBlock = bufMgr.fixNewBlock(file);
+        nodeBlockView.initializeRootBlock(rootBlock);
+        return rootBlock;
+    }
+    return bufMgr.fixBlock(file, metaBlockView.getRootNodeBlockNo(metaBlock), DBBCBLockMode::LOCK_EXCLUSIVE);
+}
+
 
 void DBMyIndex::remove(const DBAttrType &val, const DBListTID &tid) {
 
@@ -74,6 +106,16 @@ int DBMyIndex::registerClass() {
     setClassForName("DBMyIndex", createDBMyIndex);
     return 0;
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
