@@ -33,17 +33,20 @@ void DBMyIndex::find(const DBAttrType &val, DBListTID &tids) {
     BlockNo rootNodeBlockNo = metaBlockView.getRootNodeBlockNo(metaBlock);
     DBBACB rootNode = bufMgr.fixBlock(file, rootNodeBlockNo, DBBCBLockMode::LOCK_SHARED);
 
-//    DBBACB& nodeLaufvariable = rootNode;
+    DBBACB& nodeLaufvariable = rootNode;
 //    while(!nodeBlockView.isLeafBlock(nodeLaufvariable)) {
 //        BlockNo childNodeBlockNo = nodeBlockView.getChildNodeBlockNoForValue(nodeLaufvariable, val);
 //        DBBACB childNode = bufMgr.fixBlock(file, childNodeBlockNo, DBBCBLockMode::LOCK_FREE);
 //        bufMgr.unfixBlock(nodeLaufvariable);
 //        nodeLaufvariable = childNode;
 //    }
-//
-//    if(nodeBlockView.containsValue(nodeLaufvariable, val)) {
-//        tids.push_back(nodeBlockView.getTIDFor(nodeLaufvariable, val));
-//    }
+
+    if(nodeBlockView.containsValue(nodeLaufvariable, val)) {
+        tids.push_back(nodeBlockView.getTIDFor(nodeLaufvariable, val));
+    }
+
+    bufMgr.unfixBlock(nodeLaufvariable);
+    bufMgr.unfixBlock(metaBlock);
 }
 
 void DBMyIndex::insert(const DBAttrType &val, const TID &tid) {

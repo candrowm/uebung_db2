@@ -158,6 +158,21 @@ void testInsertIntValuesWithMaxElementsPerNode_3(const std::string &indexName) {
             LOG4CXX_WARN(logger, "TID mit BlockNo 2 und slot 1 wurde nicht gesetzt!");
             return;
         }
+
+        DBListTID tidsPositiveResult;
+        index.find(createIntValue(1), tidsPositiveResult);
+        DBListTID tidsNegativeResult;
+        index.find(createIntValue(33), tidsNegativeResult);
+        if (tidsNegativeResult.size() != 0) {
+            LOG4CXX_WARN(logger, "Negative Suche hat nicht funktioniert");
+            return;
+        }
+        if (tidsPositiveResult.front().page != 2 && tidsPositiveResult.front().slot != 1) {
+            LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
+            return;
+        }
+
+
         bufMgr.unfixBlock(metaBlock);
         bufMgr.unfixBlock(rootNodeBlock);
         bufMgr.closeFile(file1);
@@ -194,6 +209,19 @@ void testInsertIntValuesWithMaxElementsPerNode_3(const std::string &indexName) {
             return;
         }
 
+        DBListTID tidsPositiveResult1;
+        index.find(createIntValue(1), tidsPositiveResult1);
+        DBListTID tidsPositiveResult2;
+        index.find(createIntValue(2), tidsPositiveResult2);
+        if (tidsPositiveResult1.front().page != 2 && tidsPositiveResult1.front().slot != 1) {
+            LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
+            return;
+        }
+        if (tidsPositiveResult2.front().page != 3 && tidsPositiveResult2.front().slot != 0) {
+            LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
+            return;
+        }
+
         bufMgr.unfixBlock(metaBlock);
         bufMgr.unfixBlock(rootNodeBlock);
         bufMgr.closeFile(file1);
@@ -227,6 +255,19 @@ void testInsertIntValuesWithMaxElementsPerNode_3(const std::string &indexName) {
                                    nodeBlockView.getNumberOfKeysExistingInNode(rootNodeBlock),
                                    {createTID(2, 0), createTID(3, 1)})) {
             LOG4CXX_WARN(logger, "NodeValue-Leaf ist nicht gleich dem erwartetem NodeValue-Leaf!");
+            return;
+        }
+
+        DBListTID tidsPositiveResult1;
+        index.find(createIntValue(1), tidsPositiveResult1);
+        DBListTID tidsPositiveResult2;
+        index.find(createIntValue(2), tidsPositiveResult2);
+        if (tidsPositiveResult1.front().page != 2 && tidsPositiveResult1.front().slot != 0) {
+            LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
+            return;
+        }
+        if (tidsPositiveResult2.front().page != 3 && tidsPositiveResult2.front().slot != 1) {
+            LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
             return;
         }
 

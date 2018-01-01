@@ -305,6 +305,52 @@ namespace HubDB {
                 throw DBException("AttrType: NONE wird nicht unterstuetzt!");
             }
 
+            bool isValueEquals(const DBAttrType &value, NodeKey &nodeEntry) {
+                AttrTypeEnum type = value.type();
+                if (type == AttrTypeEnum::INT) {
+                    const DBIntType &intType = dynamic_cast<const DBIntType &>(value);
+                    return intType.getVal() == nodeEntry.intValue;
+                } else if (type == AttrTypeEnum::DOUBLE) {
+                    const DBDoubleType &doubleType = dynamic_cast<const DBDoubleType &>(value);
+                    return doubleType.getVal() == nodeEntry.doubleValue;
+                } else if (type == AttrTypeEnum::VCHAR) {
+                    const DBVCharType &vcharType = dynamic_cast<const DBVCharType &>(value);
+                    return vcharType.getVal().compare(nodeEntry.vchar) == 0;
+                }
+                throw DBException("AttrType: NONE wird nicht unterstuetzt!");
+            }
+
+            bool containsValue(DBBACB &leafBlock, const DBAttrType &value) {
+                for (int i = 0; i < getNumberOfKeysExistingInNode(leafBlock); i++) {
+                    NodeKey *pNodeKey = getKeyArraySorted(leafBlock);
+                    if(isValueEquals(value, *(pNodeKey+i))) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            TID getTIDFor(DBBACB &leafBlock, const DBAttrType &value) {
+                TID result{};
+                int positionOfResult = -1;
+                for (int i = 0; i < getNumberOfKeysExistingInNode(leafBlock); i++) {
+                    NodeKey *pNodeKey = getKeyArraySorted(leafBlock);
+                    if(isValueEquals(value, *(pNodeKey+i))) {
+                        positionOfResult = i;
+                        break;
+                    }
+                }
+                if (positionOfResult == -1) {
+                    throw DBException("TID ist nicht vorhanden! Pruefe zuerst, ob TID vorhanden ist!!!!");
+                }
+
+                NodeValue *pNodeValue = getValueArrayAlignedToKeyArray(leafBlock);
+                result.page = (pNodeValue + positionOfResult)->tid.page;
+                result.slot = (pNodeValue + positionOfResult)->tid.slot;
+
+                return result;
+            }
+
         private:
             int getMaxKeysPerNode() {
                 int sizeOfBlockInBytes = sizeof(char) * STD_BLOCKSIZE;
