@@ -238,6 +238,47 @@ namespace HubDB {
                 nodeBlock.setModified();
             }
 
+            NodeValuesAsVectors getOverflowedNode(DBBACB nodeBlock, const DBAttrType &val, const TID &tid) {
+                NodeKey *pNodeKey = getKeyArraySorted(nodeBlock);
+                NodeValue *pNodeValue = getValueArrayAlignedToKeyArray(nodeBlock);
+
+                int numberOfExistingKeys = getNumberOfKeysExistingInNode(nodeBlock);
+                vector<NodeKey> keysVector;
+                vector<NodeValue> valuesVector;
+                keysVector.assign(pNodeKey, pNodeKey + numberOfExistingKeys);
+
+                for (int i = 0; i < numberOfExistingKeys; i++) {
+                    valuesVector.push_back(*(pNodeValue + i));
+                }
+
+                for (int i = 0; i < keysVector.size(); i++) {
+                    if (isValueLessThan(val, keysVector[i])) {
+                        //vorne hinzufuegen
+                        keysVector.insert(keysVector.begin() + i, mapValToNodeKey(val));
+                        insertNodeValueTIDToVector(valuesVector, i, tid);
+                        break;
+                    } else if (i <= (keysVector.size() - 2)) {
+                        if (isValueBetween(val, keysVector[i], keysVector[i + 1])) {
+                            //zwischen hinzufuegen
+                            keysVector.insert(keysVector.begin() + (i + 1), mapValToNodeKey(val));
+                            insertNodeValueTIDToVector(valuesVector, i+1, tid);
+                            break;
+                        }
+                    } else if(i == keysVector.size()-1) {
+                        //hinten hinzufuegen
+                        keysVector.insert(keysVector.end(), mapValToNodeKey(val));
+                        insertNodeValueTIDToVector(valuesVector, static_cast<int>(valuesVector.size()), tid);
+                        break;
+                    }
+                }
+
+                NodeValuesAsVectors result;
+                result.keysVector = keysVector;
+                result.valuesVector = valuesVector;
+
+                return result;
+            }
+
             void insertNodeValueTIDToVector(vector<NodeValue> &valuesVector, int positionToInsertAt, TID tid) {
                 NodeValue dummy = NodeValue{};
                 valuesVector.push_back(dummy);
@@ -351,6 +392,29 @@ namespace HubDB {
                 return result;
             }
 
+            vector<BlockNo> getChildrenBlockNo(DBBACB nodeBlock) {
+                vector<BlockNo> result = vector<BlockNo>();
+                NodeValue *pNodeValue = getValueArrayAlignedToKeyArray(nodeBlock);
+                for (int i = 0; i < getNumberOfValuesExistingInNode(nodeBlock); i++) {
+                    result.push_back((pNodeValue+i)->blockNo);
+                }
+
+                return result;
+            }
+
+            BlockNo getChildNodeBlockNoForValue(DBBACB &innerNode, const DBAttrType &value) {
+                NodeKey *pNodeKey = getKeyArraySorted(innerNode);
+                const vector<BlockNo> &childrenBlockNo = getChildrenBlockNo(innerNode);
+                for (int i = 0; i < getNumberOfKeysExistingInNode(innerNode); i++) {
+                    if (isValueLessThan(value, *(pNodeKey + i))) {
+                        return childrenBlockNo[i];
+                    }
+                }
+                return childrenBlockNo[childrenBlockNo.size()-1];
+            }
+
+            
+
         private:
             int getMaxKeysPerNode() {
                 int sizeOfBlockInBytes = sizeof(char) * STD_BLOCKSIZE;
@@ -374,6 +438,11 @@ namespace HubDB {
             }
 
             AttrTypeEnum attrType;
+        };
+
+        struct NodeValuesAsVectors {
+            vector<NodeKey> keysVector;
+            vector<NodeValue> valuesVector;
         };
 
 
@@ -417,6 +486,8 @@ namespace HubDB {
             bool isValueBetween(const DBAttrType &value, NodeKey &leftNodeEntry, NodeKey &rightNodeEntry);
 
             NodeKey mapValToNodeKey(const DBAttrType &val);
+
+            DBBACB findLeafForInsert(const DBAttrType &val, DBBACB &metaBlock);
         };
     }
 }

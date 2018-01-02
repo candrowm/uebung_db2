@@ -1,5 +1,6 @@
 #include <hubDB/DBException.h>
 #include <hubDB/DBMyIndex.h>
+#include <math.h>
 
 using namespace HubDB::Index;
 using namespace HubDB::Exception;
@@ -33,7 +34,7 @@ void DBMyIndex::find(const DBAttrType &val, DBListTID &tids) {
     BlockNo rootNodeBlockNo = metaBlockView.getRootNodeBlockNo(metaBlock);
     DBBACB rootNode = bufMgr.fixBlock(file, rootNodeBlockNo, DBBCBLockMode::LOCK_SHARED);
 
-    DBBACB& nodeLaufvariable = rootNode;
+    DBBACB &nodeLaufvariable = rootNode;
 //    while(!nodeBlockView.isLeafBlock(nodeLaufvariable)) {
 //        BlockNo childNodeBlockNo = nodeBlockView.getChildNodeBlockNoForValue(nodeLaufvariable, val);
 //        DBBACB childNode = bufMgr.fixBlock(file, childNodeBlockNo, DBBCBLockMode::LOCK_FREE);
@@ -41,7 +42,7 @@ void DBMyIndex::find(const DBAttrType &val, DBListTID &tids) {
 //        nodeLaufvariable = childNode;
 //    }
 
-    if(nodeBlockView.containsValue(nodeLaufvariable, val)) {
+    if (nodeBlockView.containsValue(nodeLaufvariable, val)) {
         tids.push_back(nodeBlockView.getTIDFor(nodeLaufvariable, val));
     }
 
@@ -51,25 +52,59 @@ void DBMyIndex::find(const DBAttrType &val, DBListTID &tids) {
 
 void DBMyIndex::insert(const DBAttrType &val, const TID &tid) {
     DBBACB metaBlock = bufMgr.fixBlock(file, metaBlockNo, DBBCBLockMode::LOCK_EXCLUSIVE);
-    DBBACB rootBlock = getRootBlockExclusively(metaBlock);
-    metaBlockView.setRootNodeBlockNo(metaBlock, rootBlock.getBlockNo());
 
-    if (nodeBlockView.isLeafBlock(rootBlock)) {
-        int numberOfExistingKeys = nodeBlockView.getNumberOfKeysExistingInNode(rootBlock);
-        if (numberOfExistingKeys == nodeBlockView.getMaxKeysPerNode(rootBlock)) {
-            //TODO SPLIT
-        } else {
-            nodeBlockView.addValueToLeafNodeWithoutSplit(rootBlock, val, tid);
+    DBBACB leafNodeForInsert = findLeafForInsert(val, metaBlock);
+
+
+    int numberOfExistingKeys = nodeBlockView.getNumberOfKeysExistingInNode(leafNodeForInsert);
+    if (numberOfExistingKeys == nodeBlockView.getMaxKeysPerNode(leafNodeForInsert)) {
+        //TODO SPLIT
+
+        NodeValuesAsVectors overflowedNode = nodeBlockView.getOverflowedNode(leafNodeForInsert, val, tid);
+        unsigned long sizeOfOverflowedNode = overflowedNode.keysVector.size();
+        {
+            if (sizeOfOverflowedNode != nodeBlockView.getMaxKeysPerNode(leafNodeForInsert) + 1) {
+                throw DBException("Im Knoten wurde der Overflow nicht richtig erreicht!");
+            }
         }
-        bufMgr.unfixBlock(rootBlock);
-        bufMgr.unfixBlock(metaBlock);
-        bufMgr.flushBlock(rootBlock);
-        bufMgr.flushBlock(metaBlock);
-        return;
-    }
 
+        //int splitPosition = (int)ceil((float)sizeOfOverflowedNode/2.0);
+        int splitPosition = (int)((float)sizeOfOverflowedNode/2.0);
+
+        DBBACB newRightChild = bufMgr.fixNewBlock(file);
+        if (nodeBlockView.isRootNode(leafNodeForInsert)) {
+            DBBACB newRootNode = bufMgr.fixNewBlock(file);
+
+            metaBlockView.setRootNodeBlockNo(metaBlock, newRootNode.getBlockNo());
+            //TODO hier weiter....
+        } else {
+
+        }
+    } else {
+        nodeBlockView.addValueToLeafNodeWithoutSplit(leafNodeForInsert, val, tid);
+    }
+    bufMgr.unfixBlock(leafNodeForInsert);
+    bufMgr.unfixBlock(metaBlock);
+    bufMgr.flushBlock(leafNodeForInsert);
+    bufMgr.flushBlock(metaBlock);
 }
 
+DBBACB DBMyIndex::findLeafForInsert(const DBAttrType &val, DBBACB &metaBlock) {
+    DBBACB rootBlock = getRootBlockExclusively(metaBlock);
+
+    DBBACB *nodeLaufvariable = &rootBlock;
+    while (!nodeBlockView.isLeafBlock(*nodeLaufvariable)) {
+        BlockNo childNodeBlockNo = nodeBlockView.getChildNodeBlockNoForValue(*nodeLaufvariable, val);
+        DBBACB childNode = bufMgr.fixBlock(file, childNodeBlockNo, DBBCBLockMode::LOCK_EXCLUSIVE);
+        bufMgr.unfixBlock(*nodeLaufvariable);
+        nodeLaufvariable = &childNode;
+    }
+
+    if (nodeBlockView.containsValue(*nodeLaufvariable, val)) {
+        throw DBException("Duplikat ist nicht zugelassen!");
+    }
+    return *nodeLaufvariable;
+}
 
 
 DBBACB DBMyIndex::getRootBlockExclusively(DBBACB metaBlock) {
@@ -78,6 +113,7 @@ DBBACB DBMyIndex::getRootBlockExclusively(DBBACB metaBlock) {
 
         DBBACB rootBlock = bufMgr.fixNewBlock(file);
         nodeBlockView.initializeRootBlock(rootBlock);
+        metaBlockView.setRootNodeBlockNo(metaBlock, rootBlock.getBlockNo());
         return rootBlock;
     }
     return bufMgr.fixBlock(file, metaBlockView.getRootNodeBlockNo(metaBlock), DBBCBLockMode::LOCK_EXCLUSIVE);
@@ -109,6 +145,8 @@ int DBMyIndex::registerClass() {
     setClassForName("DBMyIndex", createDBMyIndex);
     return 0;
 }
+
+
 
 
 

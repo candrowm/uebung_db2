@@ -173,8 +173,8 @@ void testInsertIntValuesWithMaxElementsPerNode_3(const std::string &indexName) {
         }
 
 
-        bufMgr.unfixBlock(metaBlock);
-        bufMgr.unfixBlock(rootNodeBlock);
+//        bufMgr.unfixBlock(metaBlock);
+//        bufMgr.unfixBlock(rootNodeBlock);
         bufMgr.closeFile(file1);
         bufMgr.dropFile(fileName);
         LOG4CXX_INFO(logger, "Test1 finished!");
@@ -221,9 +221,9 @@ void testInsertIntValuesWithMaxElementsPerNode_3(const std::string &indexName) {
             LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
             return;
         }
-
-        bufMgr.unfixBlock(metaBlock);
-        bufMgr.unfixBlock(rootNodeBlock);
+//
+//        bufMgr.unfixBlock(metaBlock);
+//        bufMgr.unfixBlock(rootNodeBlock);
         bufMgr.closeFile(file1);
         bufMgr.dropFile(fileName);
         LOG4CXX_INFO(logger, "Test2 finished!");
@@ -258,18 +258,6 @@ void testInsertIntValuesWithMaxElementsPerNode_3(const std::string &indexName) {
             return;
         }
 
-        DBListTID tidsPositiveResult1;
-        index.find(createIntValue(1), tidsPositiveResult1);
-        DBListTID tidsPositiveResult2;
-        index.find(createIntValue(2), tidsPositiveResult2);
-        if (tidsPositiveResult1.front().page != 2 && tidsPositiveResult1.front().slot != 0) {
-            LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
-            return;
-        }
-        if (tidsPositiveResult2.front().page != 3 && tidsPositiveResult2.front().slot != 1) {
-            LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
-            return;
-        }
 
         bufMgr.unfixBlock(metaBlock);
         bufMgr.unfixBlock(rootNodeBlock);
@@ -315,7 +303,7 @@ void testInsertIntValuesWithMaxElementsPerNode_3(const std::string &indexName) {
         LOG4CXX_INFO(logger, "Test4 finished!");
     }
 
-    //TEST-5--------------------------------------------------------------
+    //TEST-5-Split-------------------------------------------------------------
     {
         LOG4CXX_INFO(logger, "Test5");
         bufMgr.createFile(fileName);
@@ -339,14 +327,64 @@ void testInsertIntValuesWithMaxElementsPerNode_3(const std::string &indexName) {
             LOG4CXX_WARN(logger, "NodeKey-Root ist nicht gleich dem erwartetem NodeKey-Root!");
             return;
         }
-        //TODO
-        if (!isNodeTIDValuesEquals(nodeBlockView.getValueArrayAlignedToKeyArray(rootNodeBlock),
-                                   nodeBlockView.getNumberOfKeysExistingInNode(rootNodeBlock),
-                                   {createTID(3, 0)})) {
+        if (!nodeBlockView.isRootNode(rootNodeBlock)) {
+            LOG4CXX_WARN(logger, "angelegter RootNode wird nicht als Root erkannt!");
+            return;
+        }
+        if (!nodeBlockView.isInnerBlock(rootNodeBlock)) {
+            LOG4CXX_WARN(logger, "angelegter RootNode wird nicht als InnerBlock erkannt!");
+            return;
+        }
+
+        vector<BlockNo> childrenBlockNo = nodeBlockView.getChildrenBlockNo(rootNodeBlock);
+        DBBACB leftChild = bufMgr.fixBlock(file1, childrenBlockNo[0], DBBCBLockMode::LOCK_SHARED);
+        DBBACB rightChild = bufMgr.fixBlock(file1, childrenBlockNo[1], DBBCBLockMode::LOCK_SHARED);
+
+        if (!isNodeIntValuesEquals(nodeBlockView.getKeyArraySorted(leftChild),
+                                   nodeBlockView.getNumberOfKeysExistingInNode(leftChild), {1, 2})) {
+            LOG4CXX_WARN(logger, "NodeKey-Root ist nicht gleich dem erwartetem NodeKey-Root!");
+            return;
+        }
+        if (!isNodeTIDValuesEquals(nodeBlockView.getValueArrayAlignedToKeyArray(leftChild),
+                                   nodeBlockView.getNumberOfKeysExistingInNode(leftChild),
+                                   {createTID(2, 0), createTID(3, 1)})) {
+            LOG4CXX_WARN(logger, "NodeValue-Leaf ist nicht gleich dem erwartetem NodeValue-Leaf!");
+            return;
+        }
+        if (!isNodeIntValuesEquals(nodeBlockView.getKeyArraySorted(rightChild),
+                                   nodeBlockView.getNumberOfKeysExistingInNode(rightChild), {3, 4})) {
+            LOG4CXX_WARN(logger, "NodeKey-Root ist nicht gleich dem erwartetem NodeKey-Root!");
+            return;
+        }
+        if (!isNodeTIDValuesEquals(nodeBlockView.getValueArrayAlignedToKeyArray(rightChild),
+                                   nodeBlockView.getNumberOfKeysExistingInNode(rightChild),
+                                   {createTID(3, 4), createTID(5, 4)})) {
             LOG4CXX_WARN(logger, "NodeValue-Leaf ist nicht gleich dem erwartetem NodeValue-Leaf!");
             return;
         }
 
+        DBListTID tidsPositiveResult1;
+        index.find(createIntValue(1), tidsPositiveResult1);
+        DBListTID tidsPositiveResult2;
+        index.find(createIntValue(2), tidsPositiveResult2);
+        DBListTID tidsPositiveResult3;
+        index.find(createIntValue(3), tidsPositiveResult3);
+        if (tidsPositiveResult1.front().page != 2 && tidsPositiveResult1.front().slot != 0) {
+            LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
+            return;
+        }
+        if (tidsPositiveResult2.front().page != 3 && tidsPositiveResult2.front().slot != 1) {
+            LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
+            return;
+        }
+        if (tidsPositiveResult3.front().page != 3 && tidsPositiveResult3.front().slot != 4) {
+            LOG4CXX_WARN(logger, "Positive Suche hat nicht funktioniert");
+            return;
+        }
+
+
+        bufMgr.unfixBlock(leftChild);
+        bufMgr.unfixBlock(rightChild);
         bufMgr.unfixBlock(metaBlock);
         bufMgr.unfixBlock(rootNodeBlock);
         bufMgr.closeFile(file1);
