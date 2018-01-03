@@ -77,6 +77,7 @@ namespace HubDB {
             bool doubleBlock;
             bool varCharBlock;
             BlockNo blockNo;
+            BlockNo nextFreeBlockNo;
             int maxValueCounter;
             int currentValueCounter;
         public:
@@ -86,6 +87,7 @@ namespace HubDB {
                 this->doubleBlock = false;
                 this->varCharBlock = false;
                 this->blockNo = blockNo;
+                this->nextFreeBlockNo = BlockNo(0);
                 this->currentValueCounter = 0;
             }
 
@@ -94,6 +96,8 @@ namespace HubDB {
             uint calculateMaxCounter(AttrTypeEnum attrType, bool leaf);
 
             void printAllBlocks();
+
+            void copyBlockToDBBACB(DBBACB d);
         };
 
         /*      START BLOCK      */
@@ -101,8 +105,10 @@ namespace HubDB {
         public:
             BlockNo blockNo;
             BlockNo rootBlockNo;
+            BlockNo nextFreeBlock;
             TreeStartBlock(){
                 this->blockNo = BlockNo(0);
+                this->nextFreeBlock = BlockNo(0);
             }
             void copyBlockToDBBACB(DBBACB d);
         };
@@ -118,8 +124,9 @@ namespace HubDB {
             TreeIntInnerBlock(BlockNo blockNo) : TreeBlock(blockNo) {
                 this->intBlock = true;
                 this->maxValueCounter = TreeBlock::calculateMaxCounter(AttrTypeEnum::INT, false);
-                this->values = new int[maxValueCounter];
-                this->blockNos = new BlockNo[maxValueCounter];
+                this->nextFreeBlockNo = BlockNo(0);
+                this->values = new int[maxValueCounter+2];
+                this->blockNos = new BlockNo[maxValueCounter+3];
                 for (int i = 0; i < maxValueCounter; i++) {
                     values[i] = i;
                     blockNos[i] = i;
@@ -135,13 +142,15 @@ namespace HubDB {
 
             void printAllValues();
 
-            bool insertBlockNo(int value, BlockNo blockNo);
+
 
             void insertBlockNo(BlockNo blockNoLeft, int value, BlockNo BlockNoRight);
 
             IntValueAndTIDPair removeSmallestBlockNo();
 
             IntValueAndTIDPair removeBiggestBlockNo();
+
+            bool insertBlockNo(int value, BlockNo blockNo, bool empty);
         };
         class TreeIntLeafBlock : public TreeBlock {
         public:
@@ -153,8 +162,9 @@ namespace HubDB {
                 this->intBlock = true;
                 this->leaf = true;
                 this->maxValueCounter = TreeBlock::calculateMaxCounter(AttrTypeEnum::INT, true);
-                this->values = new int[maxValueCounter];
-                this->tids = new TID[maxValueCounter];
+                this->nextFreeBlockNo = BlockNo(0);
+                this->values = new int[maxValueCounter+1];
+                this->tids = new TID[maxValueCounter+1];
                 for (int i = 0; i < maxValueCounter; i++) {
                    // values[i] = i;
                     tids[i] = TID();
@@ -331,6 +341,18 @@ namespace HubDB {
             void findTIDs(BlockNo startBlockNo, int value, DBListTID &tids, BlockNo parentBlockNo);
 
             void findTIDsFirstCall(int value, DBListTID &tids);
+
+            DBBACB fixNewBlock();
+
+            void insertFreeBlock(BlockNo blockNo);
+
+            BlockNo findFreeBlock();
+
+            void printFreeBlock();
+
+            void printFreeBlocks();
+
+            BlockNo getFreeBlock();
         };
     }
 }
