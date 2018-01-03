@@ -1,496 +1,465 @@
-#ifndef DBSEQINDEX_H_
-#define DBSEQINDEX_H_
+#ifndef DBMYINDEX_H_
+#define DBMYINDEX_H_
 
 #include <hubDB/DBIndex.h>
-#include <hubDB/DBException.h>
-#include <hubDB/DBTypes.h>
-#include <unordered_map>
-
-using namespace HubDB::Exception;
+#include <cmath>
 
 namespace HubDB {
     namespace Index {
+        
+        struct ReturnInsertValue {
+            BlockNo blockNoLeft;
+            DBIntType int_value;
+            DBDoubleType double_value;
+            DBVCharType vchar_value;
+            BlockNo blockNoRight;
 
-        static int maxKeysPerNodeInTestMode = 3;
-        static bool isInTestMode = true;
-        static const BlockNo metaBlockNo = 0;
+            ReturnInsertValue(BlockNo leftBlockNo, const DBAttrType &val, BlockNo rightBlockNo, AttrTypeEnum attrType):
+                    int_value(DBIntType(0)), double_value(DBDoubleType(0.0)), vchar_value(DBVCharType("0")){
+                blockNoLeft = leftBlockNo;
+                blockNoRight = rightBlockNo;
+                switch(attrType) {
+                    case INT: {
+                        int value = ((DBIntType *) &val)->getVal();
+                        int_value = DBIntType(value);
+                        break;
+                    }
+                    case DOUBLE: {
+                        double value = ((DBDoubleType *) &val)->getVal();
+                        double_value = DBDoubleType(value);
+                        break;
+                    }
+                    case VCHAR: {
+                        string value = ((DBVCharType *) &val)->getVal();
+                        vchar_value = DBVCharType(&value[0]);
+                        break;
+                    }
+                }
+            }
 
-        enum BlockViewId {
-            MetaBlock = 0, InnerNode = 1, LeafNode = 2
+            DBAttrType& getValue(AttrTypeEnum attrType){
+                switch(attrType) {
+                    case INT: {
+                        return int_value;
+                    }
+                    default: {
+                        return int_value;
+                        break;
+                    }
+                }
+            }
         };
 
-        union NodeKey {
-            int intValue;
-            double doubleValue;
-            char vchar[MAX_STR_LEN + 1];
-        };
-
-        union NodeValue {
-            BlockNo blockNo;
+        struct IntValueAndTIDPair {
+            int value;
             TID tid;
-        };
+            bool successful;
+            int neighbourValue;
+            BlockNo blockNo;
 
-        class BlockView {
-        public:
-            bool isMetaBlock(DBBACB &block) {
-                int blockArt = (*getBlockArtPointer(block));
-                return blockArt == MetaBlock;
+
+            IntValueAndTIDPair(int val, TID t){
+                value = val;
+                tid = t;
+                successful = true;
             }
 
-            bool isLeafBlock(DBBACB &block) {
-                int blockArt = (*getBlockArtPointer(block));
-                return blockArt == LeafNode;
+            IntValueAndTIDPair(int val, TID t, bool success){
+                value = val;
+                tid = t;
+                successful = success;
             }
 
-            bool isInnerBlock(DBBACB &block) {
-                int blockArt = (*getBlockArtPointer(block));
-                return blockArt == InnerNode;
+            IntValueAndTIDPair(int val, TID t, bool success, int neighbourVal){
+                value = val;
+                tid = t;
+                successful = success;
+                neighbourValue = neighbourVal;
             }
 
-            void setBlockToMetaBlock(DBBACB &block) {
-                int *blockArtPointer = getBlockArtPointer(block);
-                *blockArtPointer = MetaBlock;
-                block.setModified();
+            IntValueAndTIDPair(int val, BlockNo blockN, bool success){
+                value = val;
+                blockNo = blockN;
+                successful = success;
             }
 
-            void setBlockToLeafBlock(DBBACB &block) {
-                int *blockArtPointer = getBlockArtPointer(block);
-                *blockArtPointer = LeafNode;
-                block.setModified();
-            }
-
-            void setBlockToInnerBlock(DBBACB &block) {
-                int *blockArtPointer = getBlockArtPointer(block);
-                *blockArtPointer = InnerNode;
-                block.setModified();
-            }
-
-            bool isNextFreeBlockExist(DBBACB &block) {
-                return getNextFreeBlockNo(block) != 0;
-            }
-
-            BlockNo getNextFreeBlockNo(DBBACB &block) {
-                return *(getNextFreeBlockNoPointer(block));
-            }
-
-            void setNextFreeBlockNoFieldTo(DBBACB &block, BlockNo nextFreeBlockNo) {
-                *(getNextFreeBlockNoPointer(block)) = nextFreeBlockNo;
-                block.setModified();
-            }
-
-        protected:
-            int *getBlockArtPointer(DBBACB &block) const { return reinterpret_cast<int *>(block.getDataPtr()); }
-
-            BlockNo *getNextFreeBlockNoPointer(DBBACB &block) const {
-                int *pointerToNextFreeBlockNoField = getBlockArtPointer(block) + 1;
-                return reinterpret_cast<BlockNo *>(pointerToNextFreeBlockNoField);
+            IntValueAndTIDPair(int val, BlockNo blockN, bool success,  int neighbourVal){
+                value = val;
+                blockNo = blockN;
+                successful = success;
+                neighbourValue = neighbourVal;
             }
         };
 
-        class MetaBlockView : public BlockView {
-        public:
-            BlockNo getRootNodeBlockNo(DBBACB &metaBlock) {
-                return *(getTreeRootNodeBlockNoPointer(metaBlock));
+        struct IntUndersizedAndValuePair {
+            bool undersized;
+            int value;
+
+            IntUndersizedAndValuePair(int val, bool undersize){
+                undersized = undersize;
+                value = val;
             }
-
-            void setRootNodeBlockNo(DBBACB &metaBlock, BlockNo blockNo) {
-                *(getTreeRootNodeBlockNoPointer(metaBlock)) = blockNo;
-                metaBlock.setModified();
-            }
-
-
-            bool isBTreeEmpty(DBBACB &metaBlock) {
-                return *(getTreeRootNodeBlockNoPointer(metaBlock)) == treeEmptyValue;
-            }
-
-            void setTreeToEmpty(DBBACB &metaBlock) {
-                setRootNodeBlockNo(metaBlock, treeEmptyValue);
-                metaBlock.setModified();
-            }
-
-            void initializeIndex(DBBACB &firstBlock) {
-                setBlockToMetaBlock(firstBlock);
-                setNextFreeBlockNoFieldTo(firstBlock, treeEmptyValue);
-                setRootNodeBlockNo(firstBlock, treeEmptyValue);
-                setTreeToEmpty(firstBlock);
-                firstBlock.setModified();
-            }
-
-        private:
-            BlockNo *getTreeRootNodeBlockNoPointer(DBBACB &metaBlock) const {
-                return getNextFreeBlockNoPointer(metaBlock) + 1;
-            }
-
-            int treeEmptyValue = 0;
         };
 
-        class NodeBlockView : public BlockView {
+        class TreeBlock {
         public:
-            NodeBlockView(AttrTypeEnum attrType) : attrType(attrType) {};
-
-            BlockNo getParentNodeBlockNo(DBBACB &nodeBlock) {
-                return *getParentNodeBlockNoPointer(nodeBlock);
+            bool leaf;
+            bool intBlock;
+            bool doubleBlock;
+            bool varCharBlock;
+            BlockNo blockNo;
+            int maxValueCounter;
+            int currentValueCounter;
+        public:
+            TreeBlock(BlockNo blockNo) {
+                this->leaf = false;
+                this->intBlock = false;
+                this->doubleBlock = false;
+                this->varCharBlock = false;
+                this->blockNo = blockNo;
+                this->currentValueCounter = 0;
             }
 
-            void setParentNodeBlockNo(DBBACB &nodeBlock, BlockNo parentBlockNo) {
-                *getParentNodeBlockNoPointer(nodeBlock) = parentBlockNo;
-                nodeBlock.setModified();
+            TreeBlock() {}
+
+            uint calculateMaxCounter(AttrTypeEnum attrType, bool leaf);
+
+            //virtual void printAllBlocks();
+        };
+
+        /*      START BLOCK      */
+        class TreeStartBlock{
+        public:
+            BlockNo blockNo;
+            BlockNo rootBlockNo;
+            TreeStartBlock(){
+                this->blockNo = BlockNo(0);
             }
+            void copyBlockToDBBACB(DBBACB d);
+        };
+        
+        /*      INNER BLOCK     */
+        class TreeInnerBlock : public TreeBlock{
+        public:
+            TreeInnerBlock(BlockNo blockNo) : TreeBlock(blockNo){}
+            virtual ~TreeInnerBlock();
+            virtual void copyBlockToDBBACB(DBBACB d) = 0;
+            virtual void updatePointers() = 0;
+            virtual void printAllValues() = 0;
+            //virtual bool insertBlockNo(const DBAttrType &val, BlockNo blockNo);
+            virtual bool insertBlockNo(BlockNo blockNoLeft, const DBAttrType &val , BlockNo BlockNoRight, bool root) = 0;
+            virtual DBAttrType * getValue(int index) = 0;
+            virtual void setValue(int index, const DBAttrType &val) = 0;
+            virtual BlockNo getBlockNo(int index) = 0;
+            virtual void setBlockNo(int index, BlockNo blockNo) = 0;
+            virtual int compare(int index, const DBAttrType &val) = 0 ;
+            virtual TreeInnerBlock * splitBlock(BlockNo blockNo) = 0;
+    
+        };
 
-            int getNumberOfKeysExistingInNode(DBBACB &nodeBlock) {
-                return *getNumberOfValuesExistingInNodePointer(nodeBlock);
-            }
-
-            int getNumberOfValuesExistingInNode(DBBACB &nodeBlock) {
-                return getNumberOfKeysExistingInNode(nodeBlock) + 1;
-            }
-
-            void setNumberOfKeysExistingInNode(DBBACB &nodeBlock, uint numberOfValuesExistingInNode) {
-                *getNumberOfValuesExistingInNodePointer(nodeBlock) = numberOfValuesExistingInNode;
-                nodeBlock.setModified();
-            }
-
-            void increaseNumberOfKeysExistingInNode(DBBACB &nodeBlock) {
-                *getNumberOfValuesExistingInNodePointer(nodeBlock) += 1;
-                nodeBlock.setModified();
-            }
-
-            void decreaseNumberOfKeysExistingInNode(DBBACB &nodeBlock) {
-                *getNumberOfValuesExistingInNodePointer(nodeBlock) -= 1;
-                nodeBlock.setModified();
-            }
+        /*      INT BLOCK      */
+        class TreeIntInnerBlock : public TreeInnerBlock {
+        public:
+            int *values;
+            BlockNo *blockNos;
 
 
-            NodeKey *getKeyArraySorted(DBBACB &nodeBlock) {
-                return reinterpret_cast<NodeKey *>(getNumberOfValuesExistingInNodePointer(nodeBlock) + 1);
-            }
-
-            NodeValue *getValueArrayAlignedToKeyArray(DBBACB &nodeBlock) {
-                return reinterpret_cast<NodeValue *>(getKeyArraySorted(nodeBlock) + getMaxKeysPerNode());
-            }
-
-            bool isRootNode(DBBACB &nodeBlock) {
-                return getParentNodeBlockNo(nodeBlock) == metaBlockNo;
-            }
-
-            int getMaxKeysPerNode(DBBACB &nodeBlock) {
-                int maxKeysPerNode = getMaxKeysPerNode();
-
-                if (isInTestMode) {
-                    if (maxKeysPerNodeInTestMode > maxKeysPerNode) {
-                        throw DBException("In Testmodus kann die angegebene Knotenkapazitaet nicht erreicht werden!");
-                    }
-                    return maxKeysPerNodeInTestMode;
+        public:
+            TreeIntInnerBlock(BlockNo blockNo) : TreeInnerBlock(blockNo) {
+                this->intBlock = true;
+                this->maxValueCounter = TreeBlock::calculateMaxCounter(AttrTypeEnum::INT, false);
+                this->values = new int[maxValueCounter];
+                this->blockNos = new BlockNo[maxValueCounter+1];
+                for (int i = 0; i < maxValueCounter; i++) {
+                    values[i] = i;
+                    blockNos[i] = i;
                 }
-                return maxKeysPerNode;
+            };
+            ~TreeIntInnerBlock(){
+                delete[] values;
+                delete[] blockNos;
             }
-
-            void initializeRootBlock(DBBACB &nodeBlock) {
-                setBlockToLeafBlock(nodeBlock);
-                setNextFreeBlockNoFieldTo(nodeBlock, 0);
-                setParentNodeBlockNo(nodeBlock, metaBlockNo);
-                setNumberOfKeysExistingInNode(nodeBlock, 0);
-            }
-
-
-            void addValueToLeafNodeWithoutSplit(DBBACB nodeBlock, const DBAttrType &val, const TID &tid) {
-                NodeKey *pNodeKey = getKeyArraySorted(nodeBlock);
-                NodeValue *pNodeValue = getValueArrayAlignedToKeyArray(nodeBlock);
-
-                int numberOfExistingKeys = getNumberOfKeysExistingInNode(nodeBlock);
-                if (numberOfExistingKeys == 0) {
-                    *pNodeKey = mapValToNodeKey(val);
-                    pNodeValue->tid = tid;
-                } else {
-                    vector<NodeKey> keysVector;
-                    vector<NodeValue> valuesVector;
-                    keysVector.assign(pNodeKey, pNodeKey + numberOfExistingKeys);
-
-                    for (int i = 0; i < numberOfExistingKeys; i++) {
-                        valuesVector.push_back(*(pNodeValue + i));
-                    }
-
-                    for (int i = 0; i < keysVector.size(); i++) {
-                        if (isValueLessThan(val, keysVector[i])) {
-                            //vorne hinzufuegen
-                            keysVector.insert(keysVector.begin() + i, mapValToNodeKey(val));
-                            insertNodeValueTIDToVector(valuesVector, i, tid);
-                            break;
-                        } else if (i <= (keysVector.size() - 2)) {
-                            if (isValueBetween(val, keysVector[i], keysVector[i + 1])) {
-                                //zwischen hinzufuegen
-                                keysVector.insert(keysVector.begin() + (i + 1), mapValToNodeKey(val));
-                                insertNodeValueTIDToVector(valuesVector, i+1, tid);
-                                break;
-                            }
-                        } else if(i == keysVector.size()-1) {
-                            //hinten hinzufuegen
-                            keysVector.insert(keysVector.end(), mapValToNodeKey(val));
-                            insertNodeValueTIDToVector(valuesVector, static_cast<int>(valuesVector.size()), tid);
-                            break;
-                        }
-                    }
-
-                    memcpy(pNodeKey, keysVector.data(), sizeof(NodeKey) * keysVector.size());
-                    memcpy(pNodeValue, valuesVector.data(), sizeof(NodeValue) * valuesVector.size());
-                }
-                increaseNumberOfKeysExistingInNode(nodeBlock);
-                nodeBlock.setModified();
-            }
-
-            NodeValuesAsVectors getOverflowedNode(DBBACB nodeBlock, const DBAttrType &val, const TID &tid) {
-                NodeKey *pNodeKey = getKeyArraySorted(nodeBlock);
-                NodeValue *pNodeValue = getValueArrayAlignedToKeyArray(nodeBlock);
-
-                int numberOfExistingKeys = getNumberOfKeysExistingInNode(nodeBlock);
-                vector<NodeKey> keysVector;
-                vector<NodeValue> valuesVector;
-                keysVector.assign(pNodeKey, pNodeKey + numberOfExistingKeys);
-
-                for (int i = 0; i < numberOfExistingKeys; i++) {
-                    valuesVector.push_back(*(pNodeValue + i));
-                }
-
-                for (int i = 0; i < keysVector.size(); i++) {
-                    if (isValueLessThan(val, keysVector[i])) {
-                        //vorne hinzufuegen
-                        keysVector.insert(keysVector.begin() + i, mapValToNodeKey(val));
-                        insertNodeValueTIDToVector(valuesVector, i, tid);
-                        break;
-                    } else if (i <= (keysVector.size() - 2)) {
-                        if (isValueBetween(val, keysVector[i], keysVector[i + 1])) {
-                            //zwischen hinzufuegen
-                            keysVector.insert(keysVector.begin() + (i + 1), mapValToNodeKey(val));
-                            insertNodeValueTIDToVector(valuesVector, i+1, tid);
-                            break;
-                        }
-                    } else if(i == keysVector.size()-1) {
-                        //hinten hinzufuegen
-                        keysVector.insert(keysVector.end(), mapValToNodeKey(val));
-                        insertNodeValueTIDToVector(valuesVector, static_cast<int>(valuesVector.size()), tid);
-                        break;
-                    }
-                }
-
-                NodeValuesAsVectors result;
-                result.keysVector = keysVector;
-                result.valuesVector = valuesVector;
-
-                return result;
-            }
-
-            void insertNodeValueTIDToVector(vector<NodeValue> &valuesVector, int positionToInsertAt, TID tid) {
-                NodeValue dummy = NodeValue{};
-                valuesVector.push_back(dummy);
-                for (int j = positionToInsertAt; j < valuesVector.size()-1; j++) {
-                    valuesVector[j + 1].tid = valuesVector[j].tid;
-                }
-                valuesVector.at(static_cast<unsigned long>(positionToInsertAt)).tid = tid;
-            }
-
-            NodeValue mapTidToNodeValue(const TID &tid) {
-                NodeValue result{};
-                result.tid.page = tid.page;
-                result.tid.slot = tid.slot;
-                return result;
-            }
-
-            NodeKey mapValToNodeKey(const DBAttrType &value) {
-                NodeKey result{};
-                AttrTypeEnum type = value.type();
-                if (type == AttrTypeEnum::INT) {
-                    const DBIntType &intType = dynamic_cast<const DBIntType &>(value);
-                    result.intValue = intType.getVal();
-                    return result;
-                } else if (type == AttrTypeEnum::DOUBLE) {
-                    const DBDoubleType &doubleType = dynamic_cast<const DBDoubleType &>(value);
-                    result.doubleValue = doubleType.getVal();
-                    return result;
-                } else if (type == AttrTypeEnum::VCHAR) {
-                    const DBVCharType &vcharType = dynamic_cast<const DBVCharType &>(value);
-                    strcpy(result.vchar, vcharType.getVal().c_str());
-                    return result;
-                }
-                throw DBException("AttrType: NONE wird nicht unterstuetzt!");
-            }
-
-            bool isValueLessThan(const DBAttrType &value, NodeKey &nodeEntry) {
-                AttrTypeEnum type = value.type();
-                if (type == AttrTypeEnum::INT) {
-                    const DBIntType &intType = dynamic_cast<const DBIntType &>(value);
-                    return intType.getVal() < nodeEntry.intValue;
-                } else if (type == AttrTypeEnum::DOUBLE) {
-                    const DBDoubleType &doubleType = dynamic_cast<const DBDoubleType &>(value);
-                    return doubleType.getVal() < nodeEntry.doubleValue;
-                } else if (type == AttrTypeEnum::VCHAR) {
-                    const DBVCharType &vcharType = dynamic_cast<const DBVCharType &>(value);
-                    return vcharType.getVal().compare(nodeEntry.vchar) < 0;
-                }
-                throw DBException("AttrType: NONE wird nicht unterstuetzt!");
-            }
-
-            bool isValueBetween(const DBAttrType &value, NodeKey &leftNodeEntry, NodeKey &rightNodeEntry) {
-                AttrTypeEnum type = value.type();
-                if (type == AttrTypeEnum::INT) {
-                    const DBIntType &intType = dynamic_cast<const DBIntType &>(value);
-                    return leftNodeEntry.intValue < intType.getVal() && intType.getVal() < rightNodeEntry.intValue;
-                } else if (type == AttrTypeEnum::DOUBLE) {
-                    const DBDoubleType &doubleType = dynamic_cast<const DBDoubleType &>(value);
-                    return leftNodeEntry.doubleValue < doubleType.getVal() &&
-                           doubleType.getVal() < rightNodeEntry.doubleValue;
-                } else if (type == AttrTypeEnum::VCHAR) {
-                    const DBVCharType &vcharType = dynamic_cast<const DBVCharType &>(value);
-                    return (vcharType.getVal().compare(leftNodeEntry.vchar) > 0) &&
-                           (vcharType.getVal().compare(rightNodeEntry.vchar) < 0);
-                }
-                throw DBException("AttrType: NONE wird nicht unterstuetzt!");
-            }
-
-            bool isValueEquals(const DBAttrType &value, NodeKey &nodeEntry) {
-                AttrTypeEnum type = value.type();
-                if (type == AttrTypeEnum::INT) {
-                    const DBIntType &intType = dynamic_cast<const DBIntType &>(value);
-                    return intType.getVal() == nodeEntry.intValue;
-                } else if (type == AttrTypeEnum::DOUBLE) {
-                    const DBDoubleType &doubleType = dynamic_cast<const DBDoubleType &>(value);
-                    return doubleType.getVal() == nodeEntry.doubleValue;
-                } else if (type == AttrTypeEnum::VCHAR) {
-                    const DBVCharType &vcharType = dynamic_cast<const DBVCharType &>(value);
-                    return vcharType.getVal().compare(nodeEntry.vchar) == 0;
-                }
-                throw DBException("AttrType: NONE wird nicht unterstuetzt!");
-            }
-
-            bool containsValue(DBBACB &leafBlock, const DBAttrType &value) {
-                for (int i = 0; i < getNumberOfKeysExistingInNode(leafBlock); i++) {
-                    NodeKey *pNodeKey = getKeyArraySorted(leafBlock);
-                    if(isValueEquals(value, *(pNodeKey+i))) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            TID getTIDFor(DBBACB &leafBlock, const DBAttrType &value) {
-                TID result{};
-                int positionOfResult = -1;
-                for (int i = 0; i < getNumberOfKeysExistingInNode(leafBlock); i++) {
-                    NodeKey *pNodeKey = getKeyArraySorted(leafBlock);
-                    if(isValueEquals(value, *(pNodeKey+i))) {
-                        positionOfResult = i;
-                        break;
-                    }
-                }
-                if (positionOfResult == -1) {
-                    throw DBException("TID ist nicht vorhanden! Pruefe zuerst, ob TID vorhanden ist!!!!");
-                }
-
-                NodeValue *pNodeValue = getValueArrayAlignedToKeyArray(leafBlock);
-                result.page = (pNodeValue + positionOfResult)->tid.page;
-                result.slot = (pNodeValue + positionOfResult)->tid.slot;
-
-                return result;
-            }
-
-            vector<BlockNo> getChildrenBlockNo(DBBACB nodeBlock) {
-                vector<BlockNo> result = vector<BlockNo>();
-                NodeValue *pNodeValue = getValueArrayAlignedToKeyArray(nodeBlock);
-                for (int i = 0; i < getNumberOfValuesExistingInNode(nodeBlock); i++) {
-                    result.push_back((pNodeValue+i)->blockNo);
-                }
-
-                return result;
-            }
-
-            BlockNo getChildNodeBlockNoForValue(DBBACB &innerNode, const DBAttrType &value) {
-                NodeKey *pNodeKey = getKeyArraySorted(innerNode);
-                const vector<BlockNo> &childrenBlockNo = getChildrenBlockNo(innerNode);
-                for (int i = 0; i < getNumberOfKeysExistingInNode(innerNode); i++) {
-                    if (isValueLessThan(value, *(pNodeKey + i))) {
-                        return childrenBlockNo[i];
-                    }
-                }
-                return childrenBlockNo[childrenBlockNo.size()-1];
-            }
-
             
+            int compare(int index, const DBAttrType &val);
+            
+            void copyDBBACBToBlock(DBBACB d);
+            void copyBlockToDBBACB(DBBACB d);
+            void updatePointers();
 
-        private:
-            int getMaxKeysPerNode() {
-                int sizeOfBlockInBytes = sizeof(char) * STD_BLOCKSIZE;
+            void insertValue(int value);
 
-                //das wird subtrahiert: blockart + (nextfreeblockNo + parentBlockNo + numberOfValues)
-                int bytesAvailableForKeysAndValues = sizeOfBlockInBytes - sizeof(int) - 3 * sizeof(BlockNo);
+            int removeBlockNo(BlockNo blockNo);
 
-                //folgende Ungleichung wurde umgestellt: bytesAvailableForKeysAndValues >=
-                // maxNumberOfKeys*sizeof(NodeKey) + (maxNumberOfKeys+1)*sizeof(NodeValue)
-                float maxNumberOfKeys = (float) (bytesAvailableForKeysAndValues - sizeof(NodeValue))
-                                        / (float) (sizeof(NodeKey) + sizeof(NodeValue));
-                return (int) maxNumberOfKeys;
+            void printAllValues();
+
+            bool insertBlockNo(int value, BlockNo blockNo);
+
+            void insertBlockNo(BlockNo blockNoLeft, int value, BlockNo BlockNoRight);
+            bool insertBlockNo(BlockNo blockNoLeft, const DBAttrType &val, BlockNo blockNoRight, bool root);
+
+            IntValueAndTIDPair removeSmallestBlockNo();
+
+            IntValueAndTIDPair removeBiggestBlockNo();
+            
+            DBAttrType * getValue(int index);
+            void setValue(int index, const DBAttrType &val);
+            BlockNo getBlockNo(int index);
+            void setBlockNo(int index, BlockNo blockNo);
+            
+            TreeInnerBlock * splitBlock(BlockNo blockNo);
+        };
+        
+        /*      LEAF BLOCK      */
+        class TreeLeafBlock : public TreeBlock{
+        public:
+            TreeLeafBlock(BlockNo blockNo) : TreeBlock(blockNo) {}
+            virtual ~TreeLeafBlock();
+            
+            virtual void copyBlockToDBBACB(DBBACB d) = 0;
+            virtual void updatePointers() = 0;
+            virtual void printAllValues() = 0;
+    
+            //virtual void insertTID(TID tid) = 0;
+            virtual bool insertTID(const DBAttrType &val, TID tid) = 0;
+            
+            virtual DBAttrType * getValue(int index) = 0;
+            virtual void setValue(int index, const DBAttrType &val) = 0;
+            virtual TID getTID(int index) = 0;
+            virtual void setTID(int index, TID tid) = 0;
+            virtual int compare(int index, const DBAttrType &val) = 0;
+            virtual TreeLeafBlock * splitBlock(BlockNo blockno) = 0;
+            
+            
+        };
+        
+        class TreeIntLeafBlock : public TreeLeafBlock {
+        public:
+            int *values;
+            TID *tids;
+
+        public:
+            TreeIntLeafBlock(BlockNo blockNo) : TreeLeafBlock(blockNo) {
+                this->intBlock = true;
+                this->leaf = true;
+                this->maxValueCounter = TreeBlock::calculateMaxCounter(AttrTypeEnum::INT, true);
+                this->values = new int[maxValueCounter];
+                this->tids = new TID[maxValueCounter];
+                for (int i = 0; i < maxValueCounter; i++) {
+                    values[i] = 0;
+                    tids[i] = TID();
+                }
+            };
+            ~TreeIntLeafBlock(){
+                delete[] values;
+                delete[] tids;
             }
+            
+            int compare(int index, const DBAttrType &val);
 
-            BlockNo *getParentNodeBlockNoPointer(DBBACB &nodeBlock) {
-                return getNextFreeBlockNoPointer(nodeBlock) + 1;
-            }
+            void copyDBBACBToBlock(DBBACB d);
+            void copyBlockToDBBACB(DBBACB d);
+            void updatePointers();
 
-            uint *getNumberOfValuesExistingInNodePointer(DBBACB &nodeBlock) {
-                return getParentNodeBlockNoPointer(nodeBlock) + 1;
-            }
+            //void insertTID(TID tid);
 
-            AttrTypeEnum attrType;
+            bool insertTID(const DBAttrType &val, TID tid);
+
+            void printAllValues();
+
+
+            IntUndersizedAndValuePair removeTID(int value, TID tid);
+
+            IntValueAndTIDPair removeSmallestTID(int value, TID tid);
+
+            IntValueAndTIDPair removeBiggestTID(int value, TID tid);
+
+            IntValueAndTIDPair removeBiggestTID();
+
+            IntValueAndTIDPair removeSmallestTID();
+            
+            DBAttrType * getValue(int index);
+            void setValue(int index, const DBAttrType &val);
+            TID getTID(int index);
+            void setTID(int index, TID tid);
+            TreeLeafBlock * splitBlock(BlockNo blockNo);
         };
 
-        struct NodeValuesAsVectors {
-            vector<NodeKey> keysVector;
-            vector<NodeValue> valuesVector;
+        
+        /*      DOUBLE BLOCK      */
+        
+        class TreeDoubleInnerBlock : public TreeBlock {
+        public:
+            double *values;
+            BlockNo *blockNos;
+
+        public:
+            TreeDoubleInnerBlock(BlockNo blockNo) : TreeBlock(blockNo) {
+                this->doubleBlock = true;
+                this->maxValueCounter = TreeBlock::calculateMaxCounter(AttrTypeEnum::DOUBLE, false);
+                this->values = new double[maxValueCounter];
+                this->blockNos = new BlockNo[maxValueCounter];
+                for (int i = 0; i < maxValueCounter; i++) {
+                    values[i] = i;
+                    blockNos[i] = i;
+                }
+            };
+            ~TreeDoubleInnerBlock(){
+                delete[] values;
+                delete[] blockNos;
+            }
+
+            void copyBlockToDBBACB(DBBACB d);
+            void updatePointers();
+
         };
+
+        class TreeDoubleLeafBlock : public TreeBlock {
+        public:
+            double *values;
+            TID *tids;
+
+        public:
+            TreeDoubleLeafBlock(BlockNo blockNo) : TreeBlock(blockNo) {
+                this->doubleBlock = true;
+                this->leaf = true;
+                this->maxValueCounter = TreeBlock::calculateMaxCounter(AttrTypeEnum::DOUBLE, true);
+                this->values = new double[maxValueCounter];
+                this->tids = new TID[maxValueCounter];
+                for (int i = 0; i < maxValueCounter; i++) {
+                    values[i] = i;
+                    tids[i] = TID();
+                }
+            };
+            ~TreeDoubleLeafBlock(){
+                delete[] values;
+                delete[] tids;
+            }
+
+            void copyBlockToDBBACB(DBBACB d);
+            void updatePointers();
+        };
+
+        /*      VARCHAR BLOCK      */
+        class TreeVarCharInnerBlock : public TreeBlock {
+        public:
+            char *values;
+            BlockNo *blockNos;
+
+        public:
+            TreeVarCharInnerBlock(BlockNo blockNo) : TreeBlock(blockNo) {
+                this->varCharBlock= true;
+                this->maxValueCounter = TreeBlock::calculateMaxCounter(AttrTypeEnum::VCHAR, false);
+                this->values = new char[maxValueCounter*20];
+                this->blockNos = new BlockNo[maxValueCounter];
+                for (int i = 0; i < maxValueCounter; i++) {
+                    values[i] = 'a';
+                    blockNos[i] = i;
+                }
+            };
+            ~TreeVarCharInnerBlock(){
+                delete[] values;
+                delete[] blockNos;
+            }
+
+            void copyBlockToDBBACB(DBBACB d);
+            void updatePointers();
+
+        };
+
+        class TreeVarCharLeafBlock : public TreeBlock {
+        public:
+            char *values;
+            TID *tids;
+
+        public:
+            TreeVarCharLeafBlock(BlockNo blockNo) : TreeBlock(blockNo) {
+                this->varCharBlock = true;
+                this->leaf = true;
+                this->maxValueCounter = TreeBlock::calculateMaxCounter(AttrTypeEnum::VCHAR, true);
+                this->values = new char[maxValueCounter * 20];
+                this->tids = new TID[maxValueCounter];
+                for (int i = 0; i < maxValueCounter; i++) {
+                    values[i] = 'a';
+                    tids[i] = TID();
+                }
+            };
+            ~TreeVarCharLeafBlock(){
+                delete[] values;
+                delete[] tids;
+            }
+
+            void copyBlockToDBBACB(DBBACB d);
+            void updatePointers();
+        };
+
+
 
 
         class DBMyIndex : public DBIndex {
+
         public:
-            DBMyIndex(DBBufferMgr &bufferMgr, DBFile &file, AttrTypeEnum attrType, ModType mode, bool unique);
+            DBMyIndex(DBBufferMgr &bufferMgr, DBFile &file, enum AttrTypeEnum attrType, ModType mode, bool unique);
 
-            void initializeIndex() override;
+            ~DBMyIndex();
 
-            void find(const DBAttrType &val, DBListTID &tids) override;
+            string toString(string linePrefix = "") const;
 
-            void insert(const DBAttrType &val, const TID &tid) override;
+            void initializeIndex();
 
-            void remove(const DBAttrType &val, const DBListTID &tid) override;
+            void find(const DBAttrType &val, DBListTID &tids);
 
-            bool isIndexNonUniqueAble() override { return false; };
+            void insert(const DBAttrType &val, const TID &tid);
 
-            void setTestMode(int maxKeysPerNode) {
-                maxKeysPerNodeInTestMode = maxKeysPerNode;
-                isInTestMode = true;
-            }
+            void remove(const DBAttrType &val, const DBListTID &tid);
+
+            bool isIndexNonUniqueAble() { return true; };
+
+            void unfixBACBs(bool dirty);
+            
+            TreeInnerBlock * getInnerBlockFromDBBACB(DBBACB d);
+            TreeLeafBlock * getLeafBlockFromDBBACB(DBBACB d);
+            //ReturnInsertValue * getReturnInsertValue(BlockNo leftBlockNo, DBAttrType *val, BlockNo rightBlockNo);
+
 
             static int registerClass();
-
-            string toString(string linePrefix) const override;
-
+            
+            TreeInnerBlock * createNewRoot(BlockNo blockNo);
 
         private:
+
             static LoggerPtr logger;
+            static const BlockNo rootBlockNo;
+            uint calculateMaxCounter(AttrTypeEnum attrType, bool leaf);
+
+            void insertValue(const DBAttrType &val, const TID &tid);
+
+            void insertValue(const DBAttrType &val, const TID &tid, BlockNo parentBlockNo);
 
 
-            MetaBlockView metaBlockView;
-            NodeBlockView nodeBlockView;
+            ReturnInsertValue insertValue(BlockNo startBlockNo, const DBAttrType &val, const TID &tid, BlockNo parentBlockNo);
 
-            unordered_map<BlockNo, DBBACB &> usedBlocks;
+            void printAllBlocks();
 
-            DBBACB getRootBlockExclusively(DBBACB dbbacb);
+            void insertValueFirstCall(BlockNo startBlockNo, int value, const TID &tid, BlockNo parentBlockNo);
 
-            bool isValueLessThan(const DBAttrType &value, NodeKey &nodeEntry);
+            void insertValueFirstCall(int value, const TID &tid, BlockNo parentBlockNo);
 
-            bool isValueBetween(const DBAttrType &value, NodeKey &leftNodeEntry, NodeKey &rightNodeEntry);
+            void insertValueFirstCall(int value, const TID &tid);
 
-            NodeKey mapValToNodeKey(const DBAttrType &val);
+            void removeValueFirstCall(int value, const TID &tid);
 
-            DBBACB findLeafForInsert(const DBAttrType &val, DBBACB &metaBlock);
+            IntUndersizedAndValuePair removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo parentBlockNo);
+
+            void findTIDS(const DBAttrType &val, DBListTID &tids);
+
+            void findTIDs(BlockNo startBlockNo, const DBAttrType &val, const TID &tid, BlockNo parentBlockNo);
+
+            void findTIDs(BlockNo startBlockNo, const DBAttrType &val, DBListTID &tids, BlockNo parentBlockNo);
+
+            void findTIDsFirstCall(const DBAttrType &val, DBListTID &tids);
         };
     }
 }
 
 
-#endif /*DBSEQINDEX_H_*/
+#endif /*DBMYINDEX_H_*/

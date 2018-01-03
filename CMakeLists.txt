@@ -17,6 +17,7 @@ set(SOURCE_FILES
     DBLib/DBFileBlock.cpp
     DBLib/DBFileMgr.cpp
     DBLib/DBIndex.cpp
+        DBLib/DBMyIndex2.cpp
         DBLib/DBMyIndex.cpp
     DBLib/DBLock.cpp
     DBLib/DBManager.cpp
@@ -50,6 +51,7 @@ set(SOURCE_FILES
     include/hubDB/DBQueryMgr.h
     include/hubDB/DBRandomBufferMgr.h
     include/hubDB/DBSeqIndex.h
+        include/hubDB/DBMyIndex2.h
         include/hubDB/DBMyIndex.h
     include/hubDB/DBServer.h
     include/hubDB/DBServerSocket.h
@@ -109,6 +111,9 @@ target_link_libraries(hubDBTestBufMgr hubDB)
 
 add_executable(unitTest DBLib/TestClass.cpp)
 target_link_libraries(hubDB)
+
+add_executable(hubDBTestIndex2 DBApp/hubDBTestIndex2.cpp)
+target_link_libraries(hubDBTestIndex2 hubDB)
 
 add_executable(hubDBTestIndex DBApp/hubDBTestIndex.cpp)
 target_link_libraries(hubDBTestIndex hubDB)
