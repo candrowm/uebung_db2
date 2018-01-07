@@ -47,30 +47,107 @@ void DBMyQueryMgr::selectJoinTuple(DBTable *table[2], uint attrJoinPos[2], DBLis
 
     if (hasIndex[0] && hasIndex[1]) {
         LOG4CXX_INFO(logger, "Index on both join attributes");
+        bool leftRelationIsOuterRelation = true;
 
+        if (leftTableHasMorePages(table)) {
+            leftRelationIsOuterRelation = false;
+        }
+
+        indexNestedLoopJoin(table, attrJoinPos, where, tuples, leftRelationIsOuterRelation);
     } else if (hasIndex[0]) {
         LOG4CXX_INFO(logger, "Index on left join attribute");
-
+        indexNestedLoopJoin(table, attrJoinPos, where, tuples, false);
     } else if (hasIndex[1]) {
         LOG4CXX_INFO(logger, "Index on right join attribute");
+        indexNestedLoopJoin(table, attrJoinPos, where, tuples, true);
     } else {
         LOG4CXX_INFO(logger, "No Index on both join attributes");
         nestedLoopJoinNoIndex(table, attrJoinPos, where, tuples);
     }
 }
 
-void DBMyQueryMgr::getIndexInformation(DBTable *table[2], uint attrJoinPos[2], bool (&hasIndex)[2]) {
-    hasIndex[0] = false;
-    hasIndex[1] = false;
+void DBMyQueryMgr::indexNestedLoopJoin(DBTable *table[2], uint attrJoinPos[2], DBListPredicate where[2],
+                                       DBListJoinTuple &tuples, bool leftRelationIsOuterRelation) {
+    LOG4CXX_INFO(logger, "indexNestedLoopJoin()");
+    DBListTuple outerRelationTuples;
+    int outerRelationPos = getOuterRelationPosition(leftRelationIsOuterRelation);
+    int innerRelationPos = getInnerRelationPosition(leftRelationIsOuterRelation);
 
-    for (int i = 0; i < 2; i++) {
-        const DBRelDef &relDef = table[i]->getRelDef();
-        const DBAttrDef &attrDef = relDef.attrDef(attrJoinPos[i]);
-        if (attrDef.isIndexed()) {
-            hasIndex[i] = true;
+    selectTuple(table[outerRelationPos], where[outerRelationPos], outerRelationTuples);
+
+    uint attrJoinPosOfOuter = attrJoinPos[outerRelationPos];
+    uint attrJoinPosOfInner = attrJoinPos[innerRelationPos];
+
+    const DBRelDef &innerRelDef = table[innerRelationPos]->getRelDef();
+
+    QualifiedName qname;
+    strcpy(qname.relationName, innerRelDef.relationName().c_str());
+    strcpy(qname.attributeName, innerRelDef.attrDef(attrJoinPosOfInner).attrName().c_str());
+
+    DBListTuple::iterator outerTupelIterator = outerRelationTuples.begin();
+    while (outerTupelIterator != outerRelationTuples.end()) {
+        DBTuple &outerTupel = (*outerTupelIterator);
+        const DBAttrType &outerAttrVal = outerTupel.getAttrVal(attrJoinPosOfOuter);
+
+        DBListTID innerTidListTmp;
+        DBIndex *index = NULL;
+        try {
+            index = sysCatMgr.openIndex(connectDB, qname, READ);
+            index->find(outerAttrVal, innerTidListTmp);
+            innerTidListTmp.sort();
+            delete index;
+        } catch (DBException e) {
+            if (index != NULL)
+                delete index;
+            throw e;
         }
+
+        DBListTuple innerTupelListTmp;
+        table[innerRelationPos]->readTIDs(innerTidListTmp, innerTupelListTmp);
+
+        DBListTuple::iterator innerTupelIterator = innerTupelListTmp.begin();
+        while (innerTupelIterator != innerTupelListTmp.end()) {
+            DBTuple &innerTupel = (*innerTupelIterator);
+
+            if (isTupelPassingWhereCondition(innerTupel, attrJoinPosOfInner, where[innerRelationPos])) {
+                pair<DBTuple, DBTuple> joinPair;
+                DBTuple left;
+                DBTuple right;
+
+                if (outerRelationPos == 0) {
+                    left = outerTupel;
+                    right = innerTupel;
+                } else {
+                    left = innerTupel;
+                    right = outerTupel;
+                }
+
+                joinPair.first = left;
+                joinPair.second = right;
+                tuples.push_back(joinPair);
+            }
+            innerTupelIterator++;
+        }
+        outerTupelIterator++;
     }
 }
+
+int DBMyQueryMgr::getOuterRelationPosition(bool leftRelationIsOuterRelation) const {
+    int outerRelationPos = 0;
+
+    if (!leftRelationIsOuterRelation) {
+        outerRelationPos = 1;
+    }
+    return outerRelationPos;
+}
+
+int DBMyQueryMgr::getInnerRelationPosition(bool leftRelationIsOuterRelation) const {
+    if (getOuterRelationPosition(leftRelationIsOuterRelation) == 1) {
+        return 0;
+    }
+    return 1;
+}
+
 
 //Algorithmus aus SimpleQueryManager
 void DBMyQueryMgr::nestedLoopJoinNoIndex(DBTable *table[2],
@@ -102,6 +179,23 @@ void DBMyQueryMgr::nestedLoopJoinNoIndex(DBTable *table[2],
             ++u;
         }
         ++i;
+    }
+}
+
+bool DBMyQueryMgr::leftTableHasMorePages(DBTable *const *table) const {
+    return table[0]->getPageCnt() >= table[1]->getPageCnt();
+}
+
+void DBMyQueryMgr::getIndexInformation(DBTable *table[2], uint attrJoinPos[2], bool (&hasIndex)[2]) {
+    hasIndex[0] = false;
+    hasIndex[1] = false;
+
+    for (int i = 0; i < 2; i++) {
+        const DBRelDef &relDef = table[i]->getRelDef();
+        const DBAttrDef &attrDef = relDef.attrDef(attrJoinPos[i]);
+        if (attrDef.isIndexed()) {
+            hasIndex[i] = true;
+        }
     }
 }
 
@@ -202,4 +296,19 @@ void DBMyQueryMgr::selectTuple(DBTable *table, DBListPredicate &where, DBListTup
         }
     } while (l.size() == 100 && indexUsed == false);
     LOG4CXX_DEBUG(logger, "return");
+}
+
+bool DBMyQueryMgr::isTupelPassingWhereCondition(DBTuple &tuple, uint positionOfAttr, DBListPredicate where) {
+    bool match = true;
+    DBListPredicate::iterator predicateIterator = where.begin();
+
+    while (match == true && predicateIterator != where.end()) {
+        DBPredicate &predicate = *predicateIterator;
+
+        if (!(predicate.val() == tuple.getAttrVal(positionOfAttr))) {
+            match = false;
+        }
+        ++predicateIterator;
+    }
+    return match;
 }
