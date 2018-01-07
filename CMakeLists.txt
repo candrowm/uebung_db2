@@ -19,6 +19,8 @@ set(SOURCE_FILES
     DBLib/DBIndex.cpp
         DBLib/DBMyIndex2.cpp
         DBLib/DBMyIndex.cpp
+        DBLib/DBMyQueryMgr2.cpp
+        DBLib/DBMyQueryMgr.cpp
     DBLib/DBLock.cpp
     DBLib/DBManager.cpp
     DBLib/DBMonitorMgr.cpp
@@ -53,6 +55,8 @@ set(SOURCE_FILES
     include/hubDB/DBSeqIndex.h
         include/hubDB/DBMyIndex2.h
         include/hubDB/DBMyIndex.h
+        include/hubDB/DBMyQueryMgr2.h
+        include/hubDB/DBMyQueryMgr.h
     include/hubDB/DBServer.h
     include/hubDB/DBServerSocket.h
     include/hubDB/DBSimpleQueryMgr.h
