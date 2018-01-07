@@ -42,9 +42,70 @@ string DBMyQueryMgr::toString(string linePrefix) const {
 
 void DBMyQueryMgr::selectJoinTuple(DBTable *table[2], uint attrJoinPos[2], DBListPredicate where[2],
                                    DBListJoinTuple &tuples) {
+    bool hasIndex[2];
+    getIndexInformation(table, attrJoinPos, hasIndex);
 
+    if (hasIndex[0] && hasIndex[1]) {
+        LOG4CXX_INFO(logger, "Index on both join attributes");
+
+    } else if (hasIndex[0]) {
+        LOG4CXX_INFO(logger, "Index on left join attribute");
+
+    } else if (hasIndex[1]) {
+        LOG4CXX_INFO(logger, "Index on right join attribute");
+    } else {
+        LOG4CXX_INFO(logger, "No Index on both join attributes");
+        nestedLoopJoinNoIndex(table, attrJoinPos, where, tuples);
+    }
 }
 
+void DBMyQueryMgr::getIndexInformation(DBTable *table[2], uint attrJoinPos[2], bool (&hasIndex)[2]) {
+    hasIndex[0] = false;
+    hasIndex[1] = false;
+
+    for (int i = 0; i < 2; i++) {
+        const DBRelDef &relDef = table[i]->getRelDef();
+        const DBAttrDef &attrDef = relDef.attrDef(attrJoinPos[i]);
+        if (attrDef.isIndexed()) {
+            hasIndex[i] = true;
+        }
+    }
+}
+
+//Algorithmus aus SimpleQueryManager
+void DBMyQueryMgr::nestedLoopJoinNoIndex(DBTable *table[2],
+                                         uint attrJoinPos[2],
+                                         DBListPredicate where[2],
+                                         DBListJoinTuple &tuples) {
+    LOG4CXX_INFO(logger, "nestedLoopJoin()");
+
+    DBListTuple l[2];
+    for (uint i = 0; i < 2; ++i) {
+        selectTuple(table[i], where[i], l[i]);
+    }
+    DBListTuple::iterator i = l[0].begin();
+    while (i != l[0].end()) {
+        DBTuple &left = (*i);
+
+        DBListTuple::iterator u = l[1].begin();
+        while (u != l[1].end()) {
+            DBTuple &right = (*u);
+
+            if (left.getAttrVal(attrJoinPos[0]) == right.getAttrVal(attrJoinPos[1])) {
+                LOG4CXX_DEBUG(logger, "left:\n" + left.toString("\t"));
+                LOG4CXX_DEBUG(logger, "right:\n" + right.toString("\t"));
+                pair<DBTuple, DBTuple> p;
+                p.first = left;
+                p.second = right;
+                tuples.push_back(p);
+            }
+            ++u;
+        }
+        ++i;
+    }
+}
+
+//Algorithmus aus SimpleQueryManager
 void DBMyQueryMgr::selectTuple(DBTable *table, DBListPredicate &where, DBListTuple &tuple) {
     LOG4CXX_INFO(logger, "selectTuple()");
     LOG4CXX_DEBUG(logger, "table:\n" + table->toString("\t"));
@@ -54,21 +115,24 @@ void DBMyQueryMgr::selectTuple(DBTable *table, DBListPredicate &where, DBListTup
     TID t;
     t.page = 0;
     t.slot = 0;
-    list<uint> posList;
-    list<bool> checkList;
-    DBListTID tidList;
-    const DBRelDef &def = table->getRelDef();
-    QualifiedName qname;
+    list<uint> posList;//gibt fuer jeden Praedikat die Position des Attributes innerhalb der Relationsdefinition an
+    list<bool> checkList;//gibt fuer jeden Praedikat an, ob der Attribut indeziert ist oder nicht. kein Index --> true
+    DBListTID tidList;//TIDs der Tupel, die bei einem indeziertem Praedikat existieren
+    const DBRelDef &def = table->getRelDef(); //Definition der Struktur der Relation z.B. Relationsname, Attributname, ...
+    QualifiedName qname;//Relationsname und Attributname jedes Praedikates
     bool indexUsed = false;
 
     strcpy(qname.relationName, def.relationName().c_str());
 
     DBListPredicate::iterator u = where.begin();
     while (u != where.end()) {
-        DBPredicate &p = *u;
+        DBPredicate &p = *u;//Praedikat, der auf Gleichheit prueft z.B. Relationsname.Attributname = Wert
+
         if (strcmp(def.relationName().c_str(), p.name().relationName) != 0)
             throw DBQueryMgrException("Predicate missmatch");
-        DBAttrDef adef = def.attrDef(p.name().attributeName);
+        DBAttrDef adef = def.attrDef(
+                p.name().attributeName);//Definition des Attributes eines Praedikates, aber nicht der Attributwert selbst!
+
         if (adef.isIndexed() == true) {
             checkList.push_back(false);
             strcpy(qname.attributeName, adef.attrName().c_str());
@@ -80,7 +144,7 @@ void DBMyQueryMgr::selectTuple(DBTable *table, DBListPredicate &where, DBListTup
                     index->find(p.val(), tidListTmp);
                     tidListTmp.sort();
                 } else {
-                    index->find(p.val(), tidList);
+                    index->find(p.val(), tidList);//findet TID fuer den Vergleichswert des Praedikates
                     tidList.sort();
                 }
                 delete index;
@@ -139,6 +203,3 @@ void DBMyQueryMgr::selectTuple(DBTable *table, DBListPredicate &where, DBListTup
     } while (l.size() == 100 && indexUsed == false);
     LOG4CXX_DEBUG(logger, "return");
 }
-
-
-

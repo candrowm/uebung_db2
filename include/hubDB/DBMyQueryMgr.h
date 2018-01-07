@@ -17,6 +17,10 @@ namespace HubDB {
 
         private:
             static LoggerPtr logger;
+
+            void nestedLoopJoinNoIndex(DBTable * table[2],uint attrJoinPos[2],DBListPredicate where[2],DBListJoinTuple & tuples);
+
+            void getIndexInformation(DBTable * table[2],uint attrJoinPos[2], bool (&hasIndex)[2]);
         };
     }
 }
