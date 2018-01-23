@@ -1,5 +1,6 @@
 #include <hubDB/DBMyIndex.h>
 #include <hubDB/DBException.h>
+#include <hubDB/DBRandomBufferMgr.h>
 #include <cmath>
 
 using namespace HubDB::Index;
@@ -38,9 +39,9 @@ DBMyIndex::DBMyIndex(DBBufferMgr &bufferMgr, DBFile &file,
         LOG4CXX_INFO(logger, "DBMyIndex()");
     }
 
-    std::cout << "hallo" << std::endl;
+    //std::cout << "hallo" << std::endl;
     int numberOfBlocks = bufMgr.getBlockCnt(file);
-    std::cout << "Number of Blocks:" << numberOfBlocks << std::endl;
+    //std::cout << "Number of Blocks:" << numberOfBlocks << std::endl;
 
     if (numberOfBlocks == 0) {
         DBBACB metaBlock = bufMgr.fixNewBlock(file);
@@ -48,82 +49,248 @@ DBMyIndex::DBMyIndex(DBBufferMgr &bufferMgr, DBFile &file,
         metaNode.blockNo = metaBlock.getBlockNo();
 
         DBBACB rootBlock = bufMgr.fixNewBlock(file);
-        TreeIntLeafBlock rootNode = TreeIntLeafBlock(rootBlock.getBlockNo());
-        metaNode.rootBlockNo = rootNode.blockNo;
+        TreeLeafBlock *rootNode = createInitialRoot(rootBlock.getBlockNo());
+        
+        metaNode.rootBlockNo = rootNode->blockNo;
 
         metaNode.copyBlockToDBBACB(metaBlock);
         bufMgr.unfixBlock(metaBlock);
 
-        rootNode.copyBlockToDBBACB(rootBlock);
+        rootNode->copyBlockToDBBACB(rootBlock);
         bufMgr.unfixBlock(rootBlock);
+        delete rootNode;
     }
-
-    // TestZwecke
-
+    
     /*
-    insertValueFirstCall(1, TID());
-    insertValueFirstCall(2, TID());
-    insertValueFirstCall(5, TID());
-    insertValueFirstCall(10, TID());
-    insertValueFirstCall(7, TID());
-    insertValueFirstCall(11,TID());
-    insertValueFirstCall(12,TID());
-    insertValueFirstCall(9,TID());
-     */
-    for(int i = 20; i < 50; i++){
-        insertValueFirstCall(i,TID());
+    for(int i = 1; i <= 100000; i++){
+        insert(DBIntType(i),TID());
     }
+    
+    printAllBlocks();
+    
     DBListTID tids = DBListTID(0);
-
-    for(int i = 0; i < 70; i++){
-        find(DBIntType(i), tids);
+    for(int i = 1; i <= 100000; i++){
+        //printAllBlocks();
+        cout << "remove: " << i;
+        remove(DBIntType(i),tids);
     }
-    cout << tids.size() << endl;
-
-    printAllBlocks();
-    /*
-    insertValueFirstCall(17, TID());
-    printAllBlocks();
-    insertValueFirstCall(19, TID());
-    printAllBlocks();
-    insertValueFirstCall(30, TID());
-    printAllBlocks();
-    insertValueFirstCall(41, TID());
-    printAllBlocks();
-    insertValueFirstCall(12, TID());
-    printAllBlocks();
-    insertValueFirstCall(16, TID());
-    printAllBlocks();
-    insertValueFirstCall(14, TID());
-    printAllBlocks();
-    insertValueFirstCall(1, TID());
-    printAllBlocks();
-    insertValueFirstCall(8, TID());
-    printAllBlocks();
-    insertValueFirstCall(45, TID());
-    printAllBlocks();
-
-    insertValueFirstCall(43, TID());
-    printAllBlocks();
-
-    insertValueFirstCall(42, TID());
-    printAllBlocks();
-
-    insertValueFirstCall(0, TID());
-    printAllBlocks();
-
-    insertValueFirstCall(3, TID());
-    printAllBlocks();
-
-    removeValueFirstCall(45, TID());
-    printAllBlocks();
      */
+    
+    //printAllBlocks();
+    //remove(DBIntType(2),tids);
+    //printAllBlocks();
+    // TESTZWECKE!!!
+    /*
+    int newSize = 20;
+    for (int i = 0; i < newSize; i++) {
+        insertValueFirstCall(i, TID());
+        // printAllBlocks();
+        // printFreeBlocks();
+    }
 
 
+    for (int i = 0; i < newSize; i++) {
+        removeValueFirstCall(i, TID());
+        //printAllBlocks();
+        // printFreeBlocks();
+    }
+    */
+    /*
+    char * test = new char[MAX_STR_LEN+1];
+    srand(21);
+    int size = 10000;
+    int *values = new int[size];
+    for (int i = 0; i < size; i++) {
+        int randomNumber;
+        while (true) {
+            bool newNumber = true;
+            randomNumber = rand() % (size * 2);
+            for (int j = 0; j < i; j++) {
+                if (randomNumber == values[j]) {
+                    newNumber = false;
+                    break;
+                }
+            }
+            if (newNumber) {
+                break;
+            }
+        }
+
+        values[i] = randomNumber;
+        if (randomNumber == 762) {
+            //return;
+        }
+        
+        string s = to_string(values[i]);
+        strncpy(&test[0], s.c_str(), MAX_STR_LEN);
+        test[MAX_STR_LEN]='\0';
+        insert(DBVCharType(s.c_str()),TID());
+        
+        //insert(DBDoubleType(values[i]), TID());
+
+        // printAllBlocks();
+    }
+     */
+    
+    /*
+    printAllBlocks();
+    //return;
+    std::cout << "los--------------" << std::endl;
+
+    //  return;
+    DBListTID tids = DBListTID(0);
+    
+    for (int i = 0; i < size; i++) {
+        cout << "remove: " << i;
+        
+        if(i==15){
+            int a = 3;
+        }
+        //printAllBlocks();
+        string s = to_string(values[i]);
+        strncpy(&test[0], s.c_str(), MAX_STR_LEN);
+        test[MAX_STR_LEN]='\0';
+        remove(DBVCharType(s.c_str()),tids);
+        
+        //remove(DBDoubleType(values[i]), tids);
+    }
+    printAllBlocks();
+    //printFreeBlocks();
+     */
+    
 }
 
 DBMyIndex::~DBMyIndex() {
 
+}
+
+/*      BLOCK MANAGEMENT      */
+
+DBBACB DBMyIndex::fixNewBlock() {
+    BlockNo nextFreeBlockNo = getFreeBlock();
+    if (nextFreeBlockNo == 0) {
+        //std::cout << "Keine freien Blocks da" << std::endl;
+        DBBACB returnValue = bufMgr.fixNewBlock(file);
+        return returnValue;
+
+    } else {
+        DBBACB fStart = bufMgr.fixBlock(file, nextFreeBlockNo, LOCK_EXCLUSIVE);
+        // std::cout << "nextFreeBlockNo: <<<<<<<<<<<<<<<<" << nextFreeBlockNo << std::endl;
+        //std::cout << "Warn unberechtigt" << std::endl;
+        return fStart;
+    }
+
+}
+
+BlockNo DBMyIndex::getFreeBlock() {
+    DBBACB fStart = bufMgr.fixBlock(file, 0, LOCK_EXCLUSIVE);
+    TreeStartBlock *fStartBlock = (TreeStartBlock *) fStart.getDataPtr();
+    BlockNo nextFreeBlockNo = fStartBlock->nextFreeBlock;
+    if (nextFreeBlockNo == 0) {
+        bufMgr.unfixBlock(fStart);
+        return BlockNo(0);
+    }
+
+    DBBACB nextBlock = bufMgr.fixBlock(file, nextFreeBlockNo, LOCK_EXCLUSIVE);
+    TreeBlock *t = (TreeBlock *) nextBlock.getDataPtr();
+
+    fStartBlock->nextFreeBlock = t->nextFreeBlockNo;
+    bufMgr.unfixBlock(nextBlock);
+
+    fStartBlock->copyBlockToDBBACB(fStart);
+    bufMgr.unfixBlock(fStart);
+    return nextFreeBlockNo;
+}
+
+void DBMyIndex::insertFreeBlock(BlockNo blockNo) {
+    // std::cout << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<" << std::endl;
+    /*
+    DBBACB fStart = bufMgr.fixBlock(file, 0, LOCK_EXCLUSIVE);
+    TreeStartBlock *fStartBlock = (TreeStartBlock *) fStart.getDataPtr();
+    std::cout << fStartBlock->nextFreeBlock << " next free Nummer von Meta" << std::endl;
+    if (fStartBlock->nextFreeBlock == 0) {
+        // std::cout << "Neuen Freien Knoten im Metablock speichern" << std::endl;
+        fStartBlock->nextFreeBlock = blockNo;
+        fStartBlock->copyBlockToDBBACB(fStart);
+        bufMgr.unfixBlock(fStart);
+    } else {
+        BlockNo nextFreeBlockNo = fStartBlock->nextFreeBlock;
+        while (true) {
+            DBBACB nextBlock = bufMgr.fixBlock(file, nextFreeBlockNo, LOCK_EXCLUSIVE);
+            TreeBlock *t = (TreeBlock *) nextBlock.getDataPtr();
+            if (t->nextFreeBlockNo == 0) {
+                if(t->leaf){
+                    TreeLeafBlock *treeLeafBlock = getLeafBlockFromDBBACB(nextBlock); //dont forget to delete
+                    treeLeafBlock->nextFreeBlockNo = blockNo;
+                    treeLeafBlock->copyBlockToDBBACB(nextBlock);
+                    delete treeLeafBlock;
+                }
+                else{
+                    TreeInnerBlock *treeInnerBlock = getInnerBlockFromDBBACB(nextBlock); //dont forget to delete
+                    treeInnerBlock->nextFreeBlockNo = blockNo;
+                    treeInnerBlock->copyBlockToDBBACB(nextBlock);
+                    delete treeInnerBlock;
+                }
+                bufMgr.unfixBlock(nextBlock);
+                return;
+            } else {
+                nextFreeBlockNo = t->nextFreeBlockNo;
+                bufMgr.unfixBlock(nextBlock);
+            }
+        }
+    }
+     */
+
+}
+
+void DBMyIndex::printFreeBlocks() {
+    DBBACB fStart = bufMgr.fixBlock(file, 0, LOCK_EXCLUSIVE);
+    TreeStartBlock *fStartBlock = (TreeStartBlock *) fStart.getDataPtr();
+    if (fStartBlock->nextFreeBlock == 0) {
+        // fStartBlock->nextFreeBlock=blockNo;
+        // std::cout << "Kein freier Block" << std::endl;
+        fStartBlock->copyBlockToDBBACB(fStart);
+        bufMgr.unfixBlock(fStart);
+    } else {
+        BlockNo nextFreeBlockNo = fStartBlock->nextFreeBlock;
+        while (true) {
+            DBBACB nextBlock = bufMgr.fixBlock(file, nextFreeBlockNo, LOCK_EXCLUSIVE);
+            TreeBlock *t = (TreeBlock *) nextBlock.getDataPtr();
+            std::cout << "Free Block: " << t->blockNo << std::endl;
+            if (t->nextFreeBlockNo == 0) {
+                //t->copyBlockToDBBACB(nextBlock);
+                bufMgr.unfixBlock(nextBlock);
+
+                fStartBlock->copyBlockToDBBACB(fStart);
+                bufMgr.unfixBlock(fStart);
+                return;
+            } else {
+                nextFreeBlockNo = t->nextFreeBlockNo;
+                bufMgr.unfixBlock(nextBlock);
+            }
+        }
+    }
+
+}
+
+/*      LOAD TREEBLOCKS FROM DBBACB/BLOCKNO      */
+
+TreeLeafBlock * DBMyIndex::createInitialRoot(BlockNo blockNo){
+    switch(attrType){
+        case INT:{
+            return new TreeIntLeafBlock(blockNo);
+        }
+        
+        case VCHAR:{
+            return new TreeVarCharLeafBlock(blockNo);
+        }
+        case DOUBLE:{
+            return new TreeDoubleLeafBlock(blockNo);
+        }
+        default:{
+            return (TreeLeafBlock *) nullptr;
+        }
+    }
 }
 
 TreeInnerBlock * DBMyIndex::getInnerBlockFromDBBACB(DBBACB d){
@@ -134,9 +301,22 @@ TreeInnerBlock * DBMyIndex::getInnerBlockFromDBBACB(DBBACB d){
             return intInnerBlock;
             break;
         }
-        default: {
-            return nullptr;
+        
+        case VCHAR: {
+            TreeVarCharInnerBlock *varCharInnerBlock = new TreeVarCharInnerBlock(d.getBlockNo());
+            varCharInnerBlock->copyDBBACBToBlock(d);
+            return varCharInnerBlock;
             break;
+        }
+        case DOUBLE: {
+            TreeDoubleInnerBlock * doubleInnerBlock = new TreeDoubleInnerBlock(d.getBlockNo());
+            doubleInnerBlock->copyDBBACBToBlock(d);
+            return doubleInnerBlock;
+            break;
+        }
+        
+        default:{
+            return (TreeInnerBlock *) nullptr;
         }
     }
 }
@@ -150,12 +330,26 @@ TreeLeafBlock * DBMyIndex::getLeafBlockFromDBBACB(DBBACB d){
             return intLeafBlock;
             break;
         }
-        default: {
-            return nullptr;
+        
+        case VCHAR: {
+            TreeVarCharLeafBlock *varCharLeafBlock = new TreeVarCharLeafBlock(d.getBlockNo());
+            varCharLeafBlock->copyDBBACBToBlock(d);
+            return varCharLeafBlock;
             break;
+        }
+        case DOUBLE:{
+            TreeDoubleLeafBlock * doubleLeafBlock = new TreeDoubleLeafBlock(d.getBlockNo());
+            doubleLeafBlock->copyDBBACBToBlock(d);
+            return doubleLeafBlock;
+            break;
+        }
+        
+        default:{
+            return (TreeLeafBlock *) nullptr;
         }
     }
 }
+
 
 // Das Ausgeben aller Blocks der Indexdatei
 void DBMyIndex::printAllBlocks() {
@@ -194,7 +388,7 @@ void DBMyIndex::printAllBlocks() {
 
 // Wenn ein Wert geloescht wird, wird zuerst diese Funktion aufgerufen
 // Danaach wird rekursiv removeValue(...) aufgerufen
-void DBMyIndex::removeValueFirstCall(int value, const TID &tid) {
+void DBMyIndex::removeValueFirstCall(const DBAttrType &value, const TID &tid) {
     DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_SHARED);
     TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
     bufMgr.unfixBlock(metaB);
@@ -207,28 +401,25 @@ void DBMyIndex::removeValueFirstCall(int value, const TID &tid) {
 // d.h. anfangs wird die Funktion mit der RootBlockNo aufgerufen, später mit einem inneren Knoten, so lange, bis der Blattknoten erreicht wird
 // Der Rückgabewert der Funktion sagt, ob der untere Knoten zu wenig Werte hat (=undersized)
 // Zusätzlich wird ein int-Wert zurückgeliefert, der benötigt wird, falls der zu löschende Wert ebenfalls in einem inneren Knoten enthalten ist
-IntUndersizedAndValuePair
-DBMyIndex::removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo parentBlockNo) {
-    std::cout << "REMOVE VALUE " << value << " StartBlock: " << startBlockNo << std::endl;
+UndersizedAndValuePair
+DBMyIndex::removeValue(BlockNo startBlockNo, const DBAttrType &value, const TID &tid, BlockNo parentBlockNo) {
+    //std::cout << "REMOVE VALUE " << value << " StartBlock: " << startBlockNo << std::endl;
     DBBACB rootB = bufMgr.fixBlock(file, startBlockNo, LOCK_EXCLUSIVE);
     TreeBlock *treeBlock = (TreeBlock *) rootB.getDataPtr();
 
     // Falls man den Blattknoten erwischt hat --> Wert löschen
     if (treeBlock->leaf) {
-        TreeIntLeafBlock *treeIntLeafBlock = (TreeIntLeafBlock *) rootB.getDataPtr();
-        treeIntLeafBlock->updatePointers();
-        IntUndersizedAndValuePair r = treeIntLeafBlock->removeTID(value, tid);
+        TreeLeafBlock *treeLeafBlock = getLeafBlockFromDBBACB(rootB); //dont forget to delete
+        UndersizedAndValuePair r = treeLeafBlock->removeTID(value, tid);
         if (parentBlockNo == 0) {
             // Rootknoten ist einziger Knoten und kann deshalb nicht zu wenig Werte enthalten
             r.undersized = false;
         }
         //std::cout << r.undersized << std::endl;
-        treeIntLeafBlock->copyBlockToDBBACB(rootB);
+        treeLeafBlock->copyBlockToDBBACB(rootB);
         bufMgr.unfixBlock(rootB);
 
-        treeIntLeafBlock->printAllValues();
-
-        std::cout << "Geloescht value: " << value << " und undersized " << r.undersized << std::endl;
+        delete treeLeafBlock;
         return r;
     }
 
@@ -236,40 +427,38 @@ DBMyIndex::removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
     // Falls man den Blattknoten noch nicht erreicht hat --> Neuen rekursiven Aufruf (so lange, bis der Blattknoten erreicht wird)
     if (!treeBlock->leaf) {
 
-        TreeIntInnerBlock *treeIntInnerBlock = (TreeIntInnerBlock *) rootB.getDataPtr();
-        treeIntInnerBlock->updatePointers();
+        TreeInnerBlock *treeInnerBlock = getInnerBlockFromDBBACB(rootB); //dont forget to delete
 
         // Prüfen, welchen Block man als nächstes lesen muss, um eine Ebene "näher" an den zu löschenden Wert zu kommen
-        IntUndersizedAndValuePair r = IntUndersizedAndValuePair(-1, false);
-        for (int i = 0; i < treeIntInnerBlock->currentValueCounter; i++) {
-            std::cout << "i durchgang " << i << std::endl;
+        UndersizedAndValuePair r = UndersizedAndValuePair(DBIntType(-1), false, attrType);
+        for (int i = 0; i < treeInnerBlock->currentValueCounter; i++) {
+
 
             // Falls der Wert größer ist als der letzte Wert im inneren Knoten --> Letzten Pointer (=BlockNo) des inneren Knoten lesen
-            if (value > treeIntInnerBlock->values[treeIntInnerBlock->currentValueCounter - 1]) {
-                r = removeValue(
-                        treeIntInnerBlock->blockNos[treeIntInnerBlock->currentValueCounter], value, tid,
-                        treeIntInnerBlock->blockNo);
-                position = treeIntInnerBlock->currentValueCounter;
-                std::cout << " hier drinnen " << std::endl;
+            // value > treeInnerBlock->values[treeInnerBlock->currentValueCounter - 1]
+            if(treeInnerBlock->compare(treeInnerBlock->currentValueCounter-1, value) == -1){
+                r = removeValue(treeInnerBlock->getBlockNo(treeInnerBlock->currentValueCounter), value, tid, treeInnerBlock->blockNo);
+                position = treeInnerBlock->currentValueCounter;
                 break;
             }
 
             // Alle Werte des inneren Knoten durchgehen und gucken, welcher Pointer (=BlockNo) der richtige für den Wert ist
-            if (value <= treeIntInnerBlock->values[i]) {
-                r = removeValue(treeIntInnerBlock->blockNos[i], value, tid,
-                                treeIntInnerBlock->blockNo);
-                std::cout << "Knoten darunter undersized: " << r.undersized << " und kleinster Value der Liste: "
-                          << r.value << std::endl;
+            //value <= treeInnerBlock->values[i]
+            if (treeInnerBlock->compare(i, value) >= 0) {
+                r = removeValue(treeInnerBlock->getBlockNo(i), value, tid,
+                                treeInnerBlock->blockNo);
+
                 position = i;
 
                 // Wenn der zu loeschende Wert einem Wert im inneren Knoten entspricht --> Wert im inneren Knoten aendern
-                if (value == treeIntInnerBlock->values[i]) {
-                    treeIntInnerBlock->values[i] = r.value;
-                    treeIntInnerBlock->copyBlockToDBBACB(rootB);
+                if (treeInnerBlock->compare(i, value) == 0) {
+                    // TODO: KEINE AHNUNG OB
+                    treeInnerBlock->setValue(i,r.getValue(attrType));
+                    treeInnerBlock->copyBlockToDBBACB(rootB);
                     //bufMgr.unfixBlock(rootB);
 
-                    std::cout << "Shit: ich muss Wert aendern im Blattknoten zu dem Wert" << r.value
-                              << std::endl;
+                    // std::cout << "Shit: ich muss Wert aendern im Blattknoten zu dem Wert" << r.value
+                    //    << std::endl;
                 }
                 break;
             }
@@ -277,15 +466,18 @@ DBMyIndex::removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
 
         // Wenn der Kinderknoten voll genug ist --> Keine Änderung notwendig + evtl. neuen Wert nach "oben" schieben (falls Wert des Elternknoten geloescht wird)
         if (!r.undersized) {
+            delete treeInnerBlock;
+            bufMgr.unfixBlock(rootB);
             return r;
         }
 
         // Wenn dem Blattknoten ein Wert entfernt wurde und dieser nun zu wenig Werte hat --> undersized==true
         if (r.undersized) {
 
-            std::cout << " Position von undersized leaf " << position << std::endl;
+            //std::cout << " Position von undersized leaf " << position << std::endl;
+            int positionOfUndersizedBlock = treeInnerBlock->getBlockNo(position);
 
-            DBBACB undersizedBlock = bufMgr.fixBlock(file, treeIntInnerBlock->blockNos[position], LOCK_EXCLUSIVE);
+            DBBACB undersizedBlock = bufMgr.fixBlock(file, positionOfUndersizedBlock, LOCK_EXCLUSIVE);
             TreeBlock *undersizedTreeBlock = (TreeBlock *) undersizedBlock.getDataPtr();
 
 
@@ -293,279 +485,469 @@ DBMyIndex::removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
             if (!undersizedTreeBlock->leaf) {
 
 
-                TreeIntInnerBlock *undersizedTreeIntInnerBlock = (TreeIntInnerBlock *) undersizedBlock.getDataPtr();
+                TreeInnerBlock *undersizedTreeInnerBlock = getInnerBlockFromDBBACB(undersizedBlock); // don't forget to delete
+                // std::cout << " POSITION!!!!!!!!!!!!!!!!!!11111 " << undersizedTreeIntInnerBlock->blockNo << std::endl;
 
 
                 // Moeglickeit 1: aus dem linken inneren Knoten ein Value+BlockNo Paar rueberschieben
                 if (position > 0) {
                     std::cout << "Vom linken inneren Knoten etwas klauen" << std::endl;
-                    DBBACB leftNeighbourBlock = bufMgr.fixBlock(file, treeIntInnerBlock->blockNos[position - 1],
+                    DBBACB leftNeighbourBlock = bufMgr.fixBlock(file, treeInnerBlock->getBlockNo(position - 1),
                                                                 LOCK_EXCLUSIVE);
-                    TreeIntInnerBlock *leftNeighbourInnerBlock = (TreeIntInnerBlock *) leftNeighbourBlock.getDataPtr();
-                    leftNeighbourInnerBlock->updatePointers();
-                    IntValueAndTIDPair rIntValueAndTIDPair = leftNeighbourInnerBlock->removeBiggestBlockNo();
+                    //TreeIntInnerBlock *leftNeighbourInnerBlock = (TreeIntInnerBlock *) leftNeighbourBlock.getDataPtr();
+                    TreeInnerBlock *leftNeighbourInnerBlock = getInnerBlockFromDBBACB(leftNeighbourBlock); // don't forget to delete x
+                    //leftNeighbourInnerBlock->updatePointers();
+                    ValueAndTIDPair leftNValueAndTIDPair = leftNeighbourInnerBlock->removeBiggestBlockNo();
 
-                    std::cout << "Versuche Wert zu klauen von links (innere Knoten)" << std::endl;
+
 
                     //std::cout << " Ergebnis moeglichkeit 1 Value: " << rIntValueAndTIDPair.parentValue << " " << rIntValueAndTIDPair.successful << std::endl;
+                    // successful, if removing biggest blockno does not undersize left neighbor
+                    if (leftNValueAndTIDPair.successful) {
+                        DBAttrType * oldValue = treeInnerBlock->getValue(position - 1);
 
-                    if (rIntValueAndTIDPair.successful) {
+                        // adjust max value for left neighbor
+                        treeInnerBlock->setValue(position - 1, leftNValueAndTIDPair.getValue(attrType));
 
-                        if (position >= treeIntInnerBlock->currentValueCounter) {
+                        // ??
+                        if (position >= treeInnerBlock->currentValueCounter) {
                             position--;
                         }
-                        int oldValue = treeIntInnerBlock->values[position];
-                        treeIntInnerBlock->values[position] = rIntValueAndTIDPair.value;
-                        treeIntInnerBlock->copyBlockToDBBACB(rootB);
-                        bufMgr.unfixBlock(rootB);
-
-                        undersizedTreeIntInnerBlock->insertBlockNo(oldValue, rIntValueAndTIDPair.blockNo);
-                        undersizedTreeIntInnerBlock->copyBlockToDBBACB(undersizedBlock);
-                        bufMgr.unfixBlock(undersizedBlock);
-
-                        std::cout << " Wert geklaut von links und Elternknoten angepasst "
-                                  << rIntValueAndTIDPair.neighbourValue << std::endl;
 
                         r.undersized = false;
+
+                        //treeInnerBlock->printAllValues();
+                        //leftNeighbourInnerBlock->printAllValues();
+                        //undersizedTreeInnerBlock->printAllValues();
+
+
+                        treeInnerBlock->copyBlockToDBBACB(rootB);
+                        bufMgr.unfixBlock(rootB);
+                        delete treeInnerBlock;
+
+                        undersizedTreeInnerBlock->insertBlockNo(*oldValue, leftNValueAndTIDPair.blockNo, true);
+                        undersizedTreeInnerBlock->copyBlockToDBBACB(undersizedBlock);
+                        bufMgr.unfixBlock(undersizedBlock);
+                        delete undersizedTreeInnerBlock;
+                        delete oldValue;
+
+                        leftNeighbourInnerBlock->copyBlockToDBBACB(leftNeighbourBlock);
+                        bufMgr.unfixBlock(leftNeighbourBlock);
+                        delete leftNeighbourInnerBlock;
+
                         return r;
 
                     }
                     leftNeighbourInnerBlock->copyBlockToDBBACB(leftNeighbourBlock);
                     bufMgr.unfixBlock(leftNeighbourBlock);
+                    delete leftNeighbourInnerBlock;
                 }
-                std::cout << "Versuche Wert zu klauen von rechts (innere Knoten)" << std::endl;
+
 
                 // Moeglickeit 1: aus dem rechten inneren Knoten ein Value+BlockNo Paar rueberschieben
-                if (position < (treeIntInnerBlock->currentValueCounter)) {
-
-                    DBBACB rightNeighbourBlock = bufMgr.fixBlock(file, treeIntInnerBlock->blockNos[position + 1],
+                if (position < (treeInnerBlock->currentValueCounter)) {
+                    //  std::cout << "Versuche Wert zu klauen von rechts (innere Knoten)" << std::endl;
+                    DBBACB rightNeighbourBlock = bufMgr.fixBlock(file, treeInnerBlock->getBlockNo(position + 1),
                                                                  LOCK_EXCLUSIVE);
-                    TreeIntInnerBlock *rightNeighbourInnerBlock = (TreeIntInnerBlock *) rightNeighbourBlock.getDataPtr();
-                    rightNeighbourInnerBlock->updatePointers();
-                    IntValueAndTIDPair rIntValueAndTIDPair = rightNeighbourInnerBlock->removeSmallestBlockNo();
-                    if (rIntValueAndTIDPair.successful) {
-                        int oldValue = treeIntInnerBlock->values[position];
-                        treeIntInnerBlock->values[position] = rIntValueAndTIDPair.value;
-                        treeIntInnerBlock->copyBlockToDBBACB(rootB);
-                        bufMgr.unfixBlock(rootB);
-
-                        undersizedTreeIntInnerBlock->insertBlockNo(oldValue, rIntValueAndTIDPair.blockNo);
-                        undersizedTreeIntInnerBlock->copyBlockToDBBACB(undersizedBlock);
-                        bufMgr.unfixBlock(undersizedBlock);
 
 
-                        std::cout << " Wert geklaut von rechts und Elternknoten angepasst " << rIntValueAndTIDPair.value
+                    TreeInnerBlock *rightNeighbourInnerBlock = getInnerBlockFromDBBACB(rightNeighbourBlock); //don't forget to delete
+                    ValueAndTIDPair rightNValueAndTIDPair = rightNeighbourInnerBlock->removeSmallestBlockNo();
+                    if (rightNValueAndTIDPair.successful) {
+                        // removing smallest blockno from right neighbour does not undersize it
+                        DBAttrType * oldValue = treeInnerBlock->getValue(position); //don't forget to delete
+                        treeInnerBlock->setValue(position,rightNValueAndTIDPair.getValue(attrType));
+
+
+                        std::cout << " Wert geklaut von rechts und Elternknoten angepasst " << rightNValueAndTIDPair.getValue(attrType).toString()
                                   << std::endl;
-                        std::cout << " Neuer Pointer fuer zu kleinen Knoten " << rIntValueAndTIDPair.blockNo
-                                  << std::endl;
+
+
                         rightNeighbourInnerBlock->copyBlockToDBBACB(rightNeighbourBlock);
                         bufMgr.unfixBlock(rightNeighbourBlock);
+                        delete rightNeighbourInnerBlock;
+
+                        treeInnerBlock->copyBlockToDBBACB(rootB);
+                        bufMgr.unfixBlock(rootB);
+                        delete treeInnerBlock;
+
+                        undersizedTreeInnerBlock->insertBlockNo(*oldValue, rightNValueAndTIDPair.blockNo, false);
+                        undersizedTreeInnerBlock->copyBlockToDBBACB(undersizedBlock);
+                        bufMgr.unfixBlock(undersizedBlock);
+                        delete undersizedTreeInnerBlock;
+                        delete oldValue;
+
                         r.undersized = false;
                         return r;
                     }
+
                     rightNeighbourInnerBlock->copyBlockToDBBACB(rightNeighbourBlock);
                     bufMgr.unfixBlock(rightNeighbourBlock);
+                    delete rightNeighbourInnerBlock;
 
                 }
 
 
-                std::cout << " Bleibt nur noch Merge der inneren Knoten" << std::endl;
+                //std::cout << " Bleibt nur noch Merge der inneren Knoten" << std::endl;
 
                 // Moeglichkeit 3: Falls das Rüberschieben eines Value+BlockNo Paar von links und rechts nicht geklappt hat --> Merge notwendig
                 // 3.1: Merge mit linkem Knoten
                 if (position > 0) {
 
-                    std::cout << " Merge mit linkem Knoten " << std::endl;
-                    DBBACB leftNeighbourBlock = bufMgr.fixBlock(file, treeIntInnerBlock->blockNos[position - 1],
+
+                    DBBACB leftNeighbourBlock = bufMgr.fixBlock(file, treeInnerBlock->getBlockNo(position - 1),
                                                                 LOCK_EXCLUSIVE);
-                    TreeIntInnerBlock *leftNeighbourInnerBlock = (TreeIntInnerBlock *) leftNeighbourBlock.getDataPtr();
-                    leftNeighbourInnerBlock->updatePointers();
+                    TreeInnerBlock *leftNeighbourInnerBlock = getInnerBlockFromDBBACB(leftNeighbourBlock);
 
-                    std::cout << "VOR MERGE: " << std::endl;
-                    leftNeighbourInnerBlock->printAllValues();
-                    treeIntInnerBlock->printAllValues();
-
-
-                    // Aus 2 inneren Knoten 1 inneren Knoten machen, d.h. Werte und BlockNos von einem Knoten zum anderen rüberschieben
-                    memcpy(&leftNeighbourInnerBlock->values[leftNeighbourInnerBlock->currentValueCounter],
-                           &undersizedTreeIntInnerBlock->values[0],
-                           sizeof(int) * undersizedTreeIntInnerBlock->currentValueCounter);
-
-                    memcpy(&leftNeighbourInnerBlock->blockNos[leftNeighbourInnerBlock->currentValueCounter],
-                           &undersizedTreeIntInnerBlock->blockNos[0],
-                           sizeof(BlockNo) * (undersizedTreeIntInnerBlock->currentValueCounter + 1));
+                    std::cout << "Merge mit linkem inneren Knoten " << leftNeighbourInnerBlock->blockNo << " mit "
+                              << undersizedTreeInnerBlock->blockNo << " und Eltern " << treeInnerBlock->blockNo
+                              << std::endl;
 
 
-                    leftNeighbourInnerBlock->currentValueCounter = leftNeighbourInnerBlock->currentValueCounter +
-                                                                   undersizedTreeIntInnerBlock->currentValueCounter;
+                    if (position >= treeInnerBlock->currentValueCounter) {
+                        position--;
+                    }
 
-                    std::cout << "NACH MERGE: " << std::endl;
-                    leftNeighbourInnerBlock->printAllValues();
+                    //undersizedTreeInnerBlock->printAllValues();
+                    //leftNeighbourInnerBlock->printAllValues();
 
-                    undersizedTreeIntInnerBlock->currentValueCounter = 0;
+                    // upper bound for left neighbour becomes a key in left neighbour after merge
+                    for (int i = 0; i < treeInnerBlock->currentValueCounter; i++) {
+                        if (treeInnerBlock->getBlockNo(i) == leftNeighbourInnerBlock->blockNo) {
+                            DBAttrType * v = treeInnerBlock->getValue(i);
+                            leftNeighbourInnerBlock->setValue(leftNeighbourInnerBlock->currentValueCounter,*v);
+                            delete v;
+                            break;
+                        }
+                    }
 
+                    //leftNeighbourInnerBlock->values[undersizedTreeIntInnerBlock->currentValueCounter] = treeIntInnerBlock->values[position];
+                    //leftNeighbourInnerBlock->printAllValues();
 
+                    for (int i = 0; i <= undersizedTreeInnerBlock->currentValueCounter; i++) {
+                        if (i < undersizedTreeInnerBlock->currentValueCounter) {
+                            DBAttrType * v = undersizedTreeInnerBlock->getValue(i);
+                            leftNeighbourInnerBlock->setValue(leftNeighbourInnerBlock->currentValueCounter +
+                                                            i + 1, *v);
+                            delete v;
+                        }
+                        leftNeighbourInnerBlock->setBlockNo(leftNeighbourInnerBlock->currentValueCounter +
+                                                          i + 1, undersizedTreeInnerBlock->getBlockNo(i));
+                        //leftNeighbourInnerBlock->currentValueCounter++;
+                    }
+
+                    leftNeighbourInnerBlock->currentValueCounter = leftNeighbourInnerBlock->currentValueCounter + 1 +
+                                                                   undersizedTreeInnerBlock->currentValueCounter;
+
+                    // std::cout << "NACH MERGE: " << std::endl;
+                    //leftNeighbourInnerBlock->printAllValues();
+
+                    undersizedTreeInnerBlock->currentValueCounter = 0;
+                    undersizedTreeInnerBlock->nextFreeBlockNo = BlockNo(0);
 
                     //TODO: loeschen von undersized Knoten, da nicht verwendet
+                    //treeInnerBlock->printAllValues();
 
+                    // replace key for left neighbour by moving all blockNos/values one index to the left
+                    bool found = false;
+                    for (int i = 0; i <= treeInnerBlock->currentValueCounter; i++) {
+                        if (treeInnerBlock->getBlockNo(i) == undersizedTreeInnerBlock->blockNo) {
+                            found = true;
+                        }
+                        if (found) {
+                            if (i == treeInnerBlock->currentValueCounter) {
+                                treeInnerBlock->setBlockNo(i - 1, treeInnerBlock->getBlockNo(i));
+                                break;
+                            }
+                            treeInnerBlock->setBlockNo(i - 1, treeInnerBlock->getBlockNo(i));
+                            DBAttrType * v = treeInnerBlock->getValue(i);
+                            treeInnerBlock->setValue(i - 1,  *v);
+                            delete v;
+                        }
+                    };
+                    //treeInnerBlock->printAllValues();
+                    // fix the blockno for the left neighbour
+                    for (int i = 0; i < treeInnerBlock->currentValueCounter; i++) {
+                        if (treeInnerBlock->getBlockNo(i) == undersizedTreeInnerBlock->blockNo) {
+                            treeInnerBlock->setBlockNo(i,leftNeighbourInnerBlock->blockNo);
+                        }
+                    }
+                    //treeInnerBlock->printAllValues();
                     // Nach dem Merge von 2 inneren Knoten muss der Elternknoten angepasst werden
-                    memcpy(&treeIntInnerBlock->values[position - 1], &treeIntInnerBlock->values[position],
-                           sizeof(int) * (treeIntInnerBlock->currentValueCounter - position + 1));
-                    memcpy(&treeIntInnerBlock->blockNos[position - 1], &treeIntInnerBlock->blockNos[position],
-                           sizeof(BlockNo) * (treeIntInnerBlock->currentValueCounter - position + 1));
+                    //memcpy
+                    // (&treeIntInnerBlock->values[position], &treeIntInnerBlock->values[position+1],
+                    // sizeof(int) * (treeIntInnerBlock->currentValueCounter - position + 1));
 
-                    treeIntInnerBlock->currentValueCounter = treeIntInnerBlock->currentValueCounter - 1;
-                    treeIntInnerBlock->blockNos[position - 1] = leftNeighbourInnerBlock->blockNo;
-                    treeIntInnerBlock->values[position - 1] = leftNeighbourInnerBlock->values[
-                            leftNeighbourInnerBlock->currentValueCounter - 1];
+                    //memcpy(&treeIntInnerBlock->blockNos[position], &treeIntInnerBlock->blockNos[position+1],
+                    //sizeof(BlockNo) * (treeIntInnerBlock->currentValueCounter - position + 1));
 
-                    treeIntInnerBlock->printAllValues();
+                    // treeIntInnerBlock->printAllValues();
+
+
+                    treeInnerBlock->currentValueCounter = treeInnerBlock->currentValueCounter - 1;
+                    //treeIntInnerBlock->printAllValues();
+
+                    //treeIntInnerBlock->blockNos[position] = leftNeighbourInnerBlock->blockNo;
+                    // treeIntInnerBlock->printAllValues();
+                    //  treeIntInnerBlock->values[position] = leftNeighbourInnerBlock->values[
+                    //    leftNeighbourInnerBlock->currentValueCounter - 1];
+
+                    //treeInnerBlock->printAllValues();
+                    undersizedTreeInnerBlock->copyBlockToDBBACB(undersizedBlock);
+                    insertFreeBlock(undersizedTreeInnerBlock->blockNo);
+                    bufMgr.unfixBlock(undersizedBlock);
+                    delete undersizedTreeInnerBlock;
 
                     // Falls der Elternknoten == Rootknoten ist (d.h. keinen Elternknoten mehr hat) und keine Werte mehr beinhaltet
                     // Neuen Rootknoten setzen (und alten Rootknoten löschen)
-                    if (treeIntInnerBlock->currentValueCounter == 0 && parentBlockNo == 0) {
+                    if (treeInnerBlock->currentValueCounter == 0 && parentBlockNo == 0) {
                         std::cout << " Root Knoten loeschen, da ueberflussig" << std::endl;
-
+                        BlockNo newRootBlockNo = leftNeighbourInnerBlock->blockNo;
                         DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_EXCLUSIVE);
                         TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
-                        startBlock->rootBlockNo = leftNeighbourInnerBlock->blockNo;
+
+                        startBlock->rootBlockNo = newRootBlockNo;
+
                         startBlock->copyBlockToDBBACB(metaB);
                         bufMgr.unfixBlock(metaB);
 
+                        treeInnerBlock->currentValueCounter = 0;
+                        treeInnerBlock->nextFreeBlockNo = BlockNo(0);
+                        treeInnerBlock->copyBlockToDBBACB(rootB);
+                        insertFreeBlock(treeInnerBlock->blockNo);
+                        bufMgr.unfixBlock(rootB);
+                        delete treeInnerBlock;
+
+
+                        leftNeighbourInnerBlock->copyBlockToDBBACB(leftNeighbourBlock);
+                        bufMgr.unfixBlock(leftNeighbourBlock);
+                        delete leftNeighbourInnerBlock;
+
                         return r;
 
-                        //TODO: loeschen von inneren Knoten, da nicht verwendet
                     }
 
-                    undersizedTreeIntInnerBlock->copyBlockToDBBACB(undersizedBlock);
-                    bufMgr.unfixBlock(undersizedBlock);
 
-                    undersizedTreeIntInnerBlock->copyBlockToDBBACB(leftNeighbourBlock);
-                    bufMgr.unfixBlock(leftNeighbourBlock);
+                    leftNeighbourInnerBlock->copyBlockToDBBACB(leftNeighbourBlock);
 
-                    treeIntInnerBlock->copyBlockToDBBACB(rootB);
+                    treeInnerBlock->copyBlockToDBBACB(rootB);
+
+
+                    double currentValue = treeInnerBlock->currentValueCounter;
+                    double maxValue = treeInnerBlock->maxValueCounter;
+                    double divisionResult = (currentValue) / maxValue;
+
                     bufMgr.unfixBlock(rootB);
+                    delete treeInnerBlock;
 
+                    bufMgr.unfixBlock(leftNeighbourBlock);
+                    delete leftNeighbourInnerBlock;
 
+                    if (divisionResult > 0.4) {
+                        r.undersized = false;
+                        return r;
+                    }
                     return r;
 
-                }
 
+                }
 
 
                 // 3.2. Merge mit rechtem Knoten
-                if (position < (treeIntInnerBlock->currentValueCounter)) {
-                    std::cout << "Merge mit rechtem Knoten" << std::endl;
-                    DBBACB rightNeighbourBlock = bufMgr.fixBlock(file, treeIntInnerBlock->blockNos[position + 1],
+                if (position < (treeInnerBlock->currentValueCounter)) {
+                    //std::cout << "Merge mit rechtem Knoten" << std::endl;
+                    DBBACB rightNeighbourBlock = bufMgr.fixBlock(file, treeInnerBlock->getBlockNo(position + 1),
                                                                  LOCK_EXCLUSIVE);
-                    TreeIntInnerBlock *rightNeighbourLeafBlock = (TreeIntInnerBlock *) rightNeighbourBlock.getDataPtr();
-                    rightNeighbourLeafBlock->updatePointers();
+                    TreeInnerBlock *rightNeighbourInnerBlock = getInnerBlockFromDBBACB(rightNeighbourBlock);
+                    //rightNeighbourLeafBlock->updatePointers();
 
-                    std::cout << "VOR MERGE: " << std::endl;
-                    undersizedTreeIntInnerBlock->printAllValues();
+                    //std::cout << "VOR MERGE r: " << std::endl;
+                    // undersizedTreeIntInnerBlock->printAllValues();
+                    // std::cout << "Merge folgende Knoten " << std::endl;
+                    //undersizedTreeInnerBlock->printAllValues();
+                    //rightNeighbourLeafBlock->printAllValues();
 
                     // Aus 2 inneren Knoten 1 inneren Knoten machen, d.h. Werte und BlockNos von einem Knoten zum anderen rüberschieben
+                    if (position >= treeInnerBlock->currentValueCounter) {
+                        position--;
+                    }
 
-                    memcpy(&undersizedTreeIntInnerBlock->values[undersizedTreeIntInnerBlock->currentValueCounter],
+                    DBAttrType * v0 = treeInnerBlock->getValue(position);
+                    undersizedTreeInnerBlock->setValue(undersizedTreeInnerBlock->currentValueCounter,*v0);
+                    delete v0;
+                    //undersizedTreeInnerBlock->printAllValues();
+
+
+                    for (int i = 0; i <= rightNeighbourInnerBlock->currentValueCounter; i++) {
+                        if (i < rightNeighbourInnerBlock->currentValueCounter) {
+                            DBAttrType * v = rightNeighbourInnerBlock->getValue(i);
+                            undersizedTreeInnerBlock->setValue(undersizedTreeInnerBlock->currentValueCounter +
+                                                                i + 1, *v); 
+                            delete v;
+                        }
+                        undersizedTreeInnerBlock->setBlockNo(undersizedTreeInnerBlock->currentValueCounter +
+                                                              i + 1, rightNeighbourInnerBlock->getBlockNo(i));
+                        //leftNeighbourInnerBlock->currentValueCounter++;
+                    }
+
+                    undersizedTreeInnerBlock->currentValueCounter =
+                            undersizedTreeInnerBlock->currentValueCounter + 1 +
+                            rightNeighbourInnerBlock->currentValueCounter;
+
+
+/*
+                    memcpy(&undersizedTreeIntInnerBlock->values[undersizedTreeIntInnerBlock->currentValueCounter + 1],
                            &rightNeighbourLeafBlock->values[0],
-                           sizeof(int) * rightNeighbourLeafBlock->currentValueCounter);
+                           sizeof(int) * (rightNeighbourLeafBlock->currentValueCounter));
 
-                    memcpy(&undersizedTreeIntInnerBlock->blockNos[undersizedTreeIntInnerBlock->currentValueCounter],
+
+                    undersizedTreeIntInnerBlock->printAllValues();
+
+                    memcpy(&undersizedTreeIntInnerBlock->blockNos[undersizedTreeIntInnerBlock->currentValueCounter + 1],
                            &rightNeighbourLeafBlock->blockNos[0],
                            sizeof(BlockNo) * (rightNeighbourLeafBlock->currentValueCounter + 1));
 
+
+                    //  undersizedTreeIntInnerBlock->printAllValues();
+
                     undersizedTreeIntInnerBlock->currentValueCounter =
                             undersizedTreeIntInnerBlock->currentValueCounter +
-                            rightNeighbourLeafBlock->currentValueCounter;
+                            rightNeighbourLeafBlock->currentValueCounter + 1;
+                            */
 
-                    std::cout << "NACH MERGE: " << std::endl;
-                    undersizedTreeIntInnerBlock->printAllValues();
+                    //undersizedTreeInnerBlock->printAllValues();
+
+                    //std::cout << "NACH MERGE: " << std::endl;
+                    //undersizedTreeIntInnerBlock->printAllValues();
 
 
-                    treeIntInnerBlock->printAllValues();
+                    //treeInnerBlock->printAllValues();
+
+
+                    for (int i = position; i < treeInnerBlock->currentValueCounter; i++) {
+                        DBAttrType * v = treeInnerBlock->getValue(i+1);
+                        treeInnerBlock->setValue(i,*v);
+                        treeInnerBlock->setBlockNo(i,treeInnerBlock->getBlockNo(i + 1));
+                        delete v;
+                    }
+                    //treeIntInnerBlock->blockNos[treeIntInnerBlock->currentValueCounter]
+
+
                     // Nach dem Merge von 2 inneren Knoten muss der Elternknoten angepasst werden
-                    memcpy(&treeIntInnerBlock->values[position], &treeIntInnerBlock->values[position + 1],
-                           sizeof(int) * (treeIntInnerBlock->currentValueCounter - position));
-                    memcpy(&treeIntInnerBlock->blockNos[position], &treeIntInnerBlock->blockNos[position + 1],
-                           sizeof(BlockNo) * (treeIntInnerBlock->currentValueCounter - position));
+                    //  memcpy(&treeIntInnerBlock->values[position], &treeIntInnerBlock->values[position + 1],
+                    //  sizeof(int) * (treeIntInnerBlock->currentValueCounter - position));
+                    // memcpy(&treeIntInnerBlock->blockNos[position], &treeIntInnerBlock->blockNos[position + 1],
+                    // sizeof(BlockNo) * (treeIntInnerBlock->currentValueCounter - position));
 
 
-                    treeIntInnerBlock->currentValueCounter = treeIntInnerBlock->currentValueCounter - 1;
-                    treeIntInnerBlock->blockNos[position] = undersizedTreeIntInnerBlock->blockNo;
-                    treeIntInnerBlock->values[position] = undersizedTreeIntInnerBlock->values[
-                            undersizedTreeIntInnerBlock->currentValueCounter - 1];
+                    treeInnerBlock->currentValueCounter = treeInnerBlock->currentValueCounter - 1;
+                    treeInnerBlock->setBlockNo(position,undersizedTreeInnerBlock->blockNo);
+                    //treeIntInnerBlock->values[position] = undersizedTreeIntInnerBlock->values[
+                    // undersizedTreeIntInnerBlock->currentValueCounter - 1];
 
-                    treeIntInnerBlock->printAllValues();
+                    //treeIntInnerBlock->printAllValues();
 
-                    rightNeighbourLeafBlock->currentValueCounter = 0;
-                    rightNeighbourLeafBlock->copyBlockToDBBACB(rightNeighbourBlock);
+                    rightNeighbourInnerBlock->currentValueCounter = 0;
+                    rightNeighbourInnerBlock->nextFreeBlockNo = BlockNo(0);
+                    rightNeighbourInnerBlock->copyBlockToDBBACB(rightNeighbourBlock);
+                    insertFreeBlock(rightNeighbourInnerBlock->blockNo);
                     bufMgr.unfixBlock(rightNeighbourBlock);
+                    delete rightNeighbourInnerBlock;
 
-                    undersizedTreeIntInnerBlock->copyBlockToDBBACB(undersizedBlock);
+
+                    undersizedTreeInnerBlock->copyBlockToDBBACB(undersizedBlock);
                     bufMgr.unfixBlock(undersizedBlock);
-
-                    treeIntInnerBlock->copyBlockToDBBACB(rootB);
-                    bufMgr.unfixBlock(rootB);
+                    //delete undersizedTreeInnerBlock;
 
                     // Falls der Elternknoten == Rootknoten ist (d.h. keinen Elternknoten mehr hat) und keine Werte mehr beinhaltet
                     // Neuen Rootknoten setzen (und alten Rootknoten löschen)
-                    if (treeIntInnerBlock->currentValueCounter == 0 && parentBlockNo == 0) {
+                    if (treeInnerBlock->currentValueCounter == 0 && parentBlockNo == 0) {
                         std::cout << " Root Knoten loeschen, da ueberflussig!!!!" << std::endl;
-
+                        BlockNo newRootBlockNo = undersizedTreeInnerBlock->blockNo;
                         DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_EXCLUSIVE);
                         TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
-                        startBlock->rootBlockNo = undersizedTreeIntInnerBlock->blockNo;
+
+                        treeInnerBlock->currentValueCounter = 0;
+                        treeInnerBlock->nextFreeBlockNo = BlockNo(0);
+                        treeInnerBlock->copyBlockToDBBACB(rootB);
+                        insertFreeBlock(treeInnerBlock->blockNo);
+
+
+                        startBlock->rootBlockNo = newRootBlockNo;
                         startBlock->copyBlockToDBBACB(metaB);
                         bufMgr.unfixBlock(metaB);
+                        bufMgr.unfixBlock(rootB);
 
+                        delete treeInnerBlock;
+                        delete undersizedTreeInnerBlock;
 
                         return r;
 
                         //TODO: loeschen von inneren Knoten, da nicht verwendet
                     }
+                    treeInnerBlock->copyBlockToDBBACB(rootB);
+
+
+                    double currentValue = treeInnerBlock->currentValueCounter;
+                    double maxValue = treeInnerBlock->maxValueCounter;
+                    double divisionResult = (currentValue) / maxValue;
+
+                    bufMgr.unfixBlock(rootB);
+
+                    delete undersizedTreeInnerBlock;
+                    delete treeInnerBlock;
+
+                    if (divisionResult > 0.4) {
+                        r.undersized = false;
+                        return r;
+                    }
                     return r;
 
 
                 }
-
-
                 bufMgr.unfixBlock(undersizedBlock);
                 return r;
             } else {
                 // Falls der innere Knoten auf Blätter zeigt
                 //std::cout << "Blaetter zusammenschmelzen oder rumschieben " << std::endl;
                 // Der innere Knoten hat BlockNo auf Blätter
-                TreeIntLeafBlock *undersizedTreeIntLeafBlock = (TreeIntLeafBlock *) undersizedBlock.getDataPtr();
-                undersizedTreeIntLeafBlock->updatePointers();
+
+                TreeLeafBlock *undersizedTreeLeafBlock = getLeafBlockFromDBBACB(undersizedBlock); //don't forget to delete
 
                 //std::cout << "position " << position << std::endl;
 
                 // Moeglickeit 1: aus dem linken Blatt ein Value+TID Paar rueberschieben
                 if (position > 0) {
-                    std::cout << "moeglichkeit 1" << std::endl;
-                    DBBACB leftNeighbourBlock = bufMgr.fixBlock(file, treeIntInnerBlock->blockNos[position - 1],
+                    //  std::cout << "moeglichkeit 1" << std::endl;
+                    DBBACB leftNeighbourBlock = bufMgr.fixBlock(file, treeInnerBlock->getBlockNo(position - 1),
                                                                 LOCK_EXCLUSIVE);
-                    TreeIntLeafBlock *leftNeighbourLeafBlock = (TreeIntLeafBlock *) leftNeighbourBlock.getDataPtr();
-                    leftNeighbourLeafBlock->updatePointers();
-                    IntValueAndTIDPair rIntValueAndTIDPair = leftNeighbourLeafBlock->removeBiggestTID();
+                    TreeLeafBlock *leftNeighbourLeafBlock = getLeafBlockFromDBBACB(leftNeighbourBlock);
+                    ValueAndTIDPair leftNValueAndTIDPair = leftNeighbourLeafBlock->removeBiggestTID();
 
                     //std::cout << " Ergebnis moeglichkeit 1 Value: " << rIntValueAndTIDPair.parentValue << " " << rIntValueAndTIDPair.successful << std::endl;
 
-                    if (rIntValueAndTIDPair.successful) {
+                    if (leftNValueAndTIDPair.successful) {
                         //std::cout << "AUS: " << treeIntInnerBlock->values[position-1] << " wird " << rIntValueAndTIDPair.parentValue << std::endl;
-                        if (position >= treeIntInnerBlock->currentValueCounter) {
+                        treeInnerBlock->setValue(position - 1, leftNValueAndTIDPair.getNeighbourValue(attrType));
+                        if (position >= treeInnerBlock->currentValueCounter) {
                             position--;
                         }
-                        treeIntInnerBlock->values[position] = rIntValueAndTIDPair.neighbourValue;
-                        treeIntInnerBlock->copyBlockToDBBACB(rootB);
-                        bufMgr.unfixBlock(rootB);
 
-                        undersizedTreeIntLeafBlock->insertTID(DBIntType(rIntValueAndTIDPair.value), rIntValueAndTIDPair.tid);
-                        undersizedTreeIntLeafBlock->copyBlockToDBBACB(undersizedBlock);
+                        treeInnerBlock->copyBlockToDBBACB(rootB);
+                        bufMgr.unfixBlock(rootB);
+                        delete treeInnerBlock;
+
+                        undersizedTreeLeafBlock->insertTID(leftNValueAndTIDPair.getValue(attrType), leftNValueAndTIDPair.tid);
+                        undersizedTreeLeafBlock->copyBlockToDBBACB(undersizedBlock);
                         bufMgr.unfixBlock(undersizedBlock);
+                        delete undersizedTreeLeafBlock;
+
+                        leftNeighbourLeafBlock->copyBlockToDBBACB(leftNeighbourBlock);
+                        bufMgr.unfixBlock(leftNeighbourBlock);
+                        delete leftNeighbourLeafBlock;
 
                         std::cout << " Wert geklaut von links und Elternknoten angepasst "
-                                  << rIntValueAndTIDPair.neighbourValue << std::endl;
+                                  << leftNValueAndTIDPair.getNeighbourValue(attrType).toString() << std::endl;
 
                         r.undersized = false;
                         return r;
@@ -574,37 +956,67 @@ DBMyIndex::removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
 
                     leftNeighbourLeafBlock->copyBlockToDBBACB(leftNeighbourBlock);
                     bufMgr.unfixBlock(leftNeighbourBlock);
+                    delete leftNeighbourLeafBlock;
                 }
 
                 // Moeglichkeit 2: aus dem rechten Blatt ein Value+TID Paar rueberschieben
-                if (position < (treeIntInnerBlock->currentValueCounter)) {
-                    std::cout << "zwei" << std::endl;
+                if (position < (treeInnerBlock->currentValueCounter)) {
+                    // std::cout << "zwei" << std::endl;
 
-                    DBBACB rightNeighbourBlock = bufMgr.fixBlock(file, treeIntInnerBlock->blockNos[position + 1],
+                    bufMgr.unfixBlock(undersizedBlock);
+                    delete undersizedTreeLeafBlock;
+
+                    DBBACB undersizedBlock2 = bufMgr.fixBlock(file, positionOfUndersizedBlock, LOCK_EXCLUSIVE);
+                    TreeLeafBlock *undersizedTreeLeafBlock2 = getLeafBlockFromDBBACB(undersizedBlock2);
+
+                    DBBACB rightNeighbourBlock = bufMgr.fixBlock(file, treeInnerBlock->getBlockNo(position + 1),
                                                                  LOCK_EXCLUSIVE);
-                    TreeIntLeafBlock *rightNeighbourLeafBlock = (TreeIntLeafBlock *) rightNeighbourBlock.getDataPtr();
-                    rightNeighbourLeafBlock->updatePointers();
-                    IntValueAndTIDPair rIntValueAndTIDPair = rightNeighbourLeafBlock->removeSmallestTID();
-                    if (rIntValueAndTIDPair.successful) {
-                        treeIntInnerBlock->values[position] = rIntValueAndTIDPair.value;
-                        treeIntInnerBlock->copyBlockToDBBACB(rootB);
-                        bufMgr.unfixBlock(rootB);
+                    //std::cout << rightNeighbourBlock.getLockMode() << std::endl;
+                    TreeLeafBlock *rightNeighbourLeafBlock = getLeafBlockFromDBBACB(rightNeighbourBlock);
 
-                        undersizedTreeIntLeafBlock->insertTID(DBIntType(rIntValueAndTIDPair.value), rIntValueAndTIDPair.tid);
-                        undersizedTreeIntLeafBlock->copyBlockToDBBACB(undersizedBlock);
-                        bufMgr.unfixBlock(undersizedBlock);
+                    ValueAndTIDPair rightNValueAndTIDPair = rightNeighbourLeafBlock->removeSmallestTID();
+                    rightNeighbourLeafBlock->copyBlockToDBBACB(rightNeighbourBlock);
 
 
-                        std::cout << " Wert geklaut von rechts und Elternknoten angepasst " << rIntValueAndTIDPair.value
+                    if (rightNValueAndTIDPair.successful) {
+                        //   std::cout << "TRY UNFIX: " << rightNeighbourBlock.getBlockNo() << std::endl;
+
+
+                        undersizedTreeLeafBlock2->insertTID(rightNValueAndTIDPair.getValue(attrType), rightNValueAndTIDPair.tid);
+                        undersizedTreeLeafBlock2->copyBlockToDBBACB(undersizedBlock2);
+
+
+                        treeInnerBlock->setValue(position,rightNValueAndTIDPair.getValue(attrType));
+                        treeInnerBlock->copyBlockToDBBACB(rootB);
+
+
+                        std::cout << " Wert geklaut von rechts und Elternknoten angepasst !"
+                                  << rightNValueAndTIDPair.getValue(attrType).toString()
                                   << std::endl;
-                        rightNeighbourLeafBlock->copyBlockToDBBACB(rightNeighbourBlock);
-                        bufMgr.unfixBlock(rightNeighbourBlock);
+
                         r.undersized = false;
+
+
+                        bufMgr.unfixBlock(rightNeighbourBlock);
+                        delete rightNeighbourLeafBlock;
+
+                        bufMgr.unfixBlock(rootB);
+                        delete treeInnerBlock;
+
+                        bufMgr.unfixBlock(undersizedBlock2);
+                        delete undersizedTreeLeafBlock2;
                         return r;
                     }
-
-
+                    bufMgr.unfixBlock(rightNeighbourBlock);
+                    delete rightNeighbourLeafBlock;
                 }
+
+                bufMgr.unfixBlock(undersizedBlock);
+                //delete undersizedTreeLeafBlock;
+
+                DBBACB undersizedBlock2 = bufMgr.fixBlock(file, positionOfUndersizedBlock, LOCK_EXCLUSIVE);
+                TreeLeafBlock *undersizedTreeLeafBlock2 = getLeafBlockFromDBBACB(undersizedBlock2); //don't forget to delete
+                // std::cout << undersizedTreeIntLeafBlock->blockNo << "das bekommen " << std::endl;
 
 
                 // Moeglichkeit 3: Falls das Rüberschieben von einem linken oder rechten Blattknoten nicht funktioniert hat --> Merge notwendig
@@ -612,139 +1024,247 @@ DBMyIndex::removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
                 if (position > 0) {
 
                     std::cout << " Merge mit linkem Knoten " << std::endl;
-                    DBBACB leftNeighbourBlock = bufMgr.fixBlock(file, treeIntInnerBlock->blockNos[position - 1],
+                    DBBACB leftNeighbourBlock = bufMgr.fixBlock(file, treeInnerBlock->getBlockNo(position - 1),
                                                                 LOCK_EXCLUSIVE);
-                    TreeIntLeafBlock *leftNeighbourLeafBlock = (TreeIntLeafBlock *) leftNeighbourBlock.getDataPtr();
-                    leftNeighbourLeafBlock->updatePointers();
+                    TreeLeafBlock *leftNeighbourLeafBlock = getLeafBlockFromDBBACB(leftNeighbourBlock); //don't forget to delete
 
-                    std::cout << "VOR MERGE: " << std::endl;
-                    leftNeighbourLeafBlock->printAllValues();
-                    treeIntInnerBlock->printAllValues();
+                    // std::cout << undersizedTreeIntLeafBlock->blockNo << "das bekommen 2" << std::endl;
+
+                    // std::cout << "VOR MERGE: " << std::endl;
+                    //leftNeighbourLeafBlock->printAllValues();
+                    //treeIntInnerBlock->printAllValues();
 
                     // 2 Blattknoten zu 1 Blattknoten verschmelzen
+                    /*
                     memcpy(&leftNeighbourLeafBlock->values[leftNeighbourLeafBlock->currentValueCounter],
-                           &undersizedTreeIntLeafBlock->values[0],
-                           sizeof(int) * undersizedTreeIntLeafBlock->currentValueCounter);
+                           &undersizedTreeIntLeafBlock2->values[0],
+                           sizeof(int) * undersizedTreeIntLeafBlock2->currentValueCounter);
 
                     memcpy(&leftNeighbourLeafBlock->tids[leftNeighbourLeafBlock->currentValueCounter],
-                           &undersizedTreeIntLeafBlock->tids[0],
-                           sizeof(TID) * undersizedTreeIntLeafBlock->currentValueCounter);
+                           &undersizedTreeIntLeafBlock2->tids[0],
+                           sizeof(TID) * undersizedTreeIntLeafBlock2->currentValueCounter);
+                    */
+                    for (int i = 0; i < undersizedTreeLeafBlock2->currentValueCounter; i++) {
+                        DBAttrType * v = undersizedTreeLeafBlock2->getValue(i);
+                        leftNeighbourLeafBlock->setValue(leftNeighbourLeafBlock->currentValueCounter +
+                                                       i,*v);
+                        leftNeighbourLeafBlock->setTID(leftNeighbourLeafBlock->currentValueCounter +
+                                                     i, undersizedTreeLeafBlock2->getTID(i));
+                        delete v;
+                    }
 
 
                     leftNeighbourLeafBlock->currentValueCounter = leftNeighbourLeafBlock->currentValueCounter +
-                                                                  undersizedTreeIntLeafBlock->currentValueCounter;
+                                                                  undersizedTreeLeafBlock2->currentValueCounter;
 
-                    std::cout << "NACH MERGE: " << std::endl;
-                    leftNeighbourLeafBlock->printAllValues();
+                    //std::cout << "NACH MERGE: " << std::endl;
+                    //leftNeighbourLeafBlock->printAllValues();
+                    // std::cout << startBlockNo << std::endl;
 
-                    undersizedTreeIntLeafBlock->currentValueCounter = 0;
 
+                    undersizedTreeLeafBlock2->currentValueCounter = 0;
+                    undersizedTreeLeafBlock2->copyBlockToDBBACB(undersizedBlock2);
+                    //std::cout << treeIntInnerBlock->blockNo << "treeIntInnerBlock " << std::endl;
+
+                    insertFreeBlock(undersizedTreeLeafBlock2->blockNo);
 
 
                     //TODO: loeschen von undersized Knoten, da nicht verwendet
 
                     // Elternknoten anpassen, nachdem 2 Blattknoten zusammengeschmolzen wurden
-                    memcpy(&treeIntInnerBlock->values[position - 1], &treeIntInnerBlock->values[position],
-                           sizeof(int) * (treeIntInnerBlock->currentValueCounter - position + 1));
-                    memcpy(&treeIntInnerBlock->blockNos[position - 1], &treeIntInnerBlock->blockNos[position],
-                           sizeof(BlockNo) * (treeIntInnerBlock->currentValueCounter - position + 1));
+                    // memcpy(&treeIntInnerBlock->values[position - 1], &treeIntInnerBlock->values[position],
+                    //     sizeof(int) * (treeIntInnerBlock->currentValueCounter - position + 1));
+                    //  memcpy(&treeIntInnerBlock->blockNos[position - 1], &treeIntInnerBlock->blockNos[position],
+                    //  sizeof(BlockNo) * (treeIntInnerBlock->currentValueCounter - position + 1));
+                    //treeInnerBlock->printAllValues();
+                    //std::cout << "JETZT" << std::endl;
+                    // std::cout << "Position" << position - 1 << std::endl;
+                    for (int i = position; i <= treeInnerBlock->currentValueCounter; i++) {
+                        DBAttrType * v = treeInnerBlock->getValue(i);
+                        treeInnerBlock->setValue(i - 1,*v);
+                        treeInnerBlock->setBlockNo(i - 1,treeInnerBlock->getBlockNo(i));
+                        delete v;
+                    }
 
-                    treeIntInnerBlock->currentValueCounter = treeIntInnerBlock->currentValueCounter - 1;
-                    treeIntInnerBlock->blockNos[position - 1] = leftNeighbourLeafBlock->blockNo;
-                    treeIntInnerBlock->values[position - 1] = leftNeighbourLeafBlock->values[
-                            leftNeighbourLeafBlock->currentValueCounter - 1];
+                    //treeInnerBlock->printAllValues();
 
-                    treeIntInnerBlock->printAllValues();
+                    treeInnerBlock->currentValueCounter = treeInnerBlock->currentValueCounter - 1;
+                    treeInnerBlock->setBlockNo(position - 1,leftNeighbourLeafBlock->blockNo);
+                    //treeIntInnerBlock->values[position - 1] = leftNeighbourLeafBlock->values[
+                    //  leftNeighbourLeafBlock->currentValueCounter - 1];
+
+                    // treeIntInnerBlock->printAllValues();
 
                     // Falls der Elternknoten der Rootknoten ist und keine Werte mehr beinhaltet --> Neuen Rootknoten setzen und alten löschen
-                    if (treeIntInnerBlock->currentValueCounter == 0 && parentBlockNo == 0) {
+                    if (treeInnerBlock->currentValueCounter == 0 && parentBlockNo == 0) {
                         std::cout << " Root Knoten loeschen, da ueberflussig" << std::endl;
+                        BlockNo newRootBlockNo = leftNeighbourLeafBlock->blockNo;
+
+
+                        treeInnerBlock->currentValueCounter = 0;
+                        treeInnerBlock->copyBlockToDBBACB(rootB);
+                        insertFreeBlock(treeInnerBlock->blockNo);
+                        bufMgr.unfixBlock(rootB);
+                        delete treeInnerBlock;
+
 
                         DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_EXCLUSIVE);
                         TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
-                        startBlock->rootBlockNo = leftNeighbourLeafBlock->blockNo;
+                        startBlock->rootBlockNo = newRootBlockNo;
                         startBlock->copyBlockToDBBACB(metaB);
                         bufMgr.unfixBlock(metaB);
+
+
+                        bufMgr.unfixBlock(undersizedBlock2);
+                        delete undersizedTreeLeafBlock2;
+
+                        leftNeighbourLeafBlock->copyBlockToDBBACB(leftNeighbourBlock);
+                        bufMgr.unfixBlock(leftNeighbourBlock);
+                        delete leftNeighbourLeafBlock;
 
                         return r;
 
                         //TODO: loeschen von inneren Knoten, da nicht verwendet
                     }
 
-                    undersizedTreeIntLeafBlock->copyBlockToDBBACB(undersizedBlock);
-                    bufMgr.unfixBlock(undersizedBlock);
+                    double currentValue = treeInnerBlock->currentValueCounter;
+                    double maxValue = treeInnerBlock->maxValueCounter;
+
+                    //std::cout << "HIER 3" << std::endl;
+                    //std::cout << "HIER 3-1" << std::endl;
+                    // undersizedTreeIntLeafBlock->copyBlockToDBBACB(undersizedBlock);
+
+                    //std::cout << "HIER 3-2" << std::endl;
+
+
+                    // std::cout << "HIER 4" << std::endl;
+
+                    bufMgr.unfixBlock(undersizedBlock2);
+                    delete undersizedTreeLeafBlock2;
 
                     leftNeighbourLeafBlock->copyBlockToDBBACB(leftNeighbourBlock);
                     bufMgr.unfixBlock(leftNeighbourBlock);
+                    delete leftNeighbourLeafBlock;
 
-                    treeIntInnerBlock->copyBlockToDBBACB(rootB);
+                    treeInnerBlock->copyBlockToDBBACB(rootB);
                     bufMgr.unfixBlock(rootB);
+                    delete treeInnerBlock;
+
+                    double divisionResult = (currentValue) / maxValue;
 
 
+                    if (divisionResult > 0.4) {
+                        r.undersized = false;
+                        return r;
+                    }
                     return r;
+
 
                 }
 
 
                 // 3.2. Merge mit rechtem Knoten
-                if (position < (treeIntInnerBlock->currentValueCounter)) {
+                if (position < (treeInnerBlock->currentValueCounter)) {
                     std::cout << "Merge mit rechtem Knoten" << std::endl;
-                    DBBACB rightNeighbourBlock = bufMgr.fixBlock(file, treeIntInnerBlock->blockNos[position + 1],
+                    DBBACB rightNeighbourBlock = bufMgr.fixBlock(file, treeInnerBlock->getBlockNo(position + 1),
                                                                  LOCK_EXCLUSIVE);
-                    TreeIntLeafBlock *rightNeighbourLeafBlock = (TreeIntLeafBlock *) rightNeighbourBlock.getDataPtr();
-                    rightNeighbourLeafBlock->updatePointers();
+                    TreeLeafBlock *rightNeighbourLeafBlock = getLeafBlockFromDBBACB(rightNeighbourBlock);
 
-                    std::cout << "VOR MERGE: " << std::endl;
-                    undersizedTreeIntLeafBlock->printAllValues();
+                    //std::cout << "VOR MERGE: " << std::endl;
+                    //undersizedTreeIntLeafBlock->printAllValues();
 
 
                     // 2 Blattknoten zu 1 Blattknoten verschmelzen
-                    memcpy(&undersizedTreeIntLeafBlock->values[undersizedTreeIntLeafBlock->currentValueCounter],
+                    if (position >= treeInnerBlock->currentValueCounter) {
+                        position--;
+                    }
+
+                    for (int i = 0; i < rightNeighbourLeafBlock->currentValueCounter; i++) {
+                        DBAttrType * v = rightNeighbourLeafBlock->getValue(i);
+                        undersizedTreeLeafBlock2->setValue(undersizedTreeLeafBlock2->currentValueCounter +
+                                                            i,*v);
+                        undersizedTreeLeafBlock2->setTID(undersizedTreeLeafBlock2->currentValueCounter +
+                                                          i, rightNeighbourLeafBlock->getTID(i));
+                        delete v;
+                    }
+/*
+                    memcpy(&undersizedTreeIntLeafBlock2->values[undersizedTreeIntLeafBlock2->currentValueCounter],
                            &rightNeighbourLeafBlock->values[0],
                            sizeof(int) * rightNeighbourLeafBlock->currentValueCounter);
 
-                    memcpy(&undersizedTreeIntLeafBlock->tids[undersizedTreeIntLeafBlock->currentValueCounter],
+                    memcpy(&undersizedTreeIntLeafBlock->tids[undersizedTreeIntLeafBlock2->currentValueCounter],
                            &rightNeighbourLeafBlock->tids[0],
                            sizeof(TID) * rightNeighbourLeafBlock->currentValueCounter);
+                           */
 
-                    undersizedTreeIntLeafBlock->currentValueCounter = undersizedTreeIntLeafBlock->currentValueCounter +
-                                                                      rightNeighbourLeafBlock->currentValueCounter;
+                    undersizedTreeLeafBlock2->currentValueCounter =
+                            undersizedTreeLeafBlock2->currentValueCounter +
+                            rightNeighbourLeafBlock->currentValueCounter;
 
-                    std::cout << "NACH MERGE: " << std::endl;
-                    undersizedTreeIntLeafBlock->printAllValues();
+                    //std::cout << "NACH MERGE: " << std::endl;
+                    //  undersizedTreeIntLeafBlock2->printAllValues();
 
 
-                    treeIntInnerBlock->printAllValues();
+                    //treeInnerBlock->printAllValues();
 
+                    /*
                     // Nach dem Merge von 2 Blattknoten muss der Elternknoten angepasst werden
                     memcpy(&treeIntInnerBlock->values[position], &treeIntInnerBlock->values[position + 1],
                            sizeof(int) * (treeIntInnerBlock->currentValueCounter - position));
                     memcpy(&treeIntInnerBlock->blockNos[position], &treeIntInnerBlock->blockNos[position + 1],
                            sizeof(BlockNo) * (treeIntInnerBlock->currentValueCounter - position));
-                    treeIntInnerBlock->currentValueCounter = treeIntInnerBlock->currentValueCounter - 1;
-                    treeIntInnerBlock->blockNos[position] = undersizedTreeIntLeafBlock->blockNo;
-                    treeIntInnerBlock->values[position] = undersizedTreeIntLeafBlock->values[
-                            undersizedTreeIntLeafBlock->currentValueCounter - 1];
+                           */
 
-                    treeIntInnerBlock->printAllValues();
+
+                    for (int i = position; i < treeInnerBlock->currentValueCounter; i++) {
+                        DBAttrType * v = treeInnerBlock->getValue(i+1);
+                        treeInnerBlock->setValue(i,*v);
+                        treeInnerBlock->setBlockNo(i,treeInnerBlock->getBlockNo(i + 1));
+                        delete v;
+                    }
+
+
+                    treeInnerBlock->currentValueCounter = treeInnerBlock->currentValueCounter - 1;
+                    treeInnerBlock->setBlockNo(position,undersizedTreeLeafBlock2->blockNo);
+
+                    DBAttrType * v0 = undersizedTreeLeafBlock2->getValue(undersizedTreeLeafBlock2->currentValueCounter - 1);
+                    treeInnerBlock->setValue(position,*v0);
+                    delete v0;
+
+                    // treeIntInnerBlock->printAllValues();
+                    // std::cout << "Fertig mit merge" << std::endl;
 
                     rightNeighbourLeafBlock->currentValueCounter = 0;
                     rightNeighbourLeafBlock->copyBlockToDBBACB(rightNeighbourBlock);
+                    insertFreeBlock(rightNeighbourLeafBlock->blockNo);
                     bufMgr.unfixBlock(rightNeighbourBlock);
+                    delete rightNeighbourLeafBlock;
 
-                    undersizedTreeIntLeafBlock->copyBlockToDBBACB(undersizedBlock);
-                    bufMgr.unfixBlock(undersizedBlock);
 
-                    treeIntInnerBlock->copyBlockToDBBACB(rootB);
-                    bufMgr.unfixBlock(rootB);
+                    //undersizedTreeLeafBlock2->copyBlockToDBBACB(undersizedBlock2);
+                    //bufMgr.unfixBlock(undersizedBlock2);
+                    //delete undersizedTreeLeafBlock2;
+
 
                     // Falls der Elternknoten der Rootknoten ist und keine Werte mehr beinhaltet --> Neuen Rootknoten setzen + alten löschen
-                    if (treeIntInnerBlock->currentValueCounter == 0 && parentBlockNo == 0) {
-                        std::cout << " Root Knoten loeschen, da ueberflussig" << std::endl;
+                    if (treeInnerBlock->currentValueCounter == 0 && parentBlockNo == 0) {
+                        std::cout << " Root Knoten loeschen, da ueberflussig :O" << std::endl;
+                        BlockNo newRootBlockNo = undersizedTreeLeafBlock2->blockNo;
+                        // std::cout << "VERSUCHE UNFIX:" << rootB.getBlockNo() << std::endl;
+
+                        undersizedTreeLeafBlock2->copyBlockToDBBACB(undersizedBlock2);
+                        bufMgr.unfixBlock(undersizedBlock2);
+                        delete undersizedTreeLeafBlock2;
+
+                        treeInnerBlock->currentValueCounter = 0;
+                        treeInnerBlock->copyBlockToDBBACB(rootB);
+                        insertFreeBlock(treeInnerBlock->blockNo);
+                        bufMgr.unfixBlock(rootB);
+                        delete treeInnerBlock;
 
                         DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_EXCLUSIVE);
                         TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
-                        startBlock->rootBlockNo = undersizedTreeIntLeafBlock->blockNo;
+                        startBlock->rootBlockNo = newRootBlockNo;
                         startBlock->copyBlockToDBBACB(metaB);
                         bufMgr.unfixBlock(metaB);
 
@@ -753,6 +1273,24 @@ DBMyIndex::removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
 
                         //TODO: loeschen von inneren Knoten, da nicht verwendet
                     }
+                    double currentValue = treeInnerBlock->currentValueCounter;
+                    double maxValue = treeInnerBlock->maxValueCounter;
+                    double divisionResult = (currentValue) / maxValue;
+
+                    treeInnerBlock->copyBlockToDBBACB(rootB);
+                    bufMgr.unfixBlock(rootB);
+                    delete treeInnerBlock;
+
+                    undersizedTreeLeafBlock2->copyBlockToDBBACB(undersizedBlock2);
+                    bufMgr.unfixBlock(undersizedBlock2);
+                    delete undersizedTreeLeafBlock2;
+
+                    if (divisionResult > 0.4) {
+                        r.undersized = false;
+                        return r;
+                    }
+
+
                     return r;
 
 
@@ -768,18 +1306,18 @@ DBMyIndex::removeValue(BlockNo startBlockNo, int value, const TID &tid, BlockNo 
 
 // Wenn ein Wert eingefügt wird, wird als erstes diese Funktion aufgerufen
 // Im Anschluss wird insertValue(...) rekursiv aufgerufen
-void DBMyIndex::insertValueFirstCall(int value, const TID &tid) {
+void DBMyIndex::insertValueFirstCall(const DBAttrType &value, const TID &tid) {
     DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_SHARED);
     TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
     bufMgr.unfixBlock(metaB);
-    insertValue(startBlock->rootBlockNo, DBIntType(value), tid, 0);
+    insertValue(startBlock->rootBlockNo, value, tid, 0);
 }
 
 // Diese Funktion wird rekursiv aufgerufen, dabei wird die startBlockNo angegeben (anfangs der Rootknoten)
 // Ziel ist es, die Funktion so lange rekursiv aufzufrufen, bis man einen Blattknoten erreicht hat
 ReturnInsertValue
 DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID &tid, BlockNo parentBlockNo) {
-    std::cout << "INSERT VALUE " << value.toString("") << " StartBlock: " << startBlockNo << std::endl;
+    //std::cout << "INSERT VALUE " << value.toString("") << " StartBlock: " << startBlockNo << std::endl;
     //int value = ((DBIntType *)val)->getVal();
     DBBACB rootB = bufMgr.fixBlock(file, startBlockNo, LOCK_EXCLUSIVE);
     TreeBlock *treeBlock = (TreeBlock *) rootB.getDataPtr();
@@ -789,7 +1327,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
         bool split = treeLeafBlock->insertTID(value, tid);
 
         if (!split) {
-            std::cout << "kein Split notwendig" << std::endl;
+            //std::cout << "kein Split notwendig" << std::endl;
             treeLeafBlock->copyBlockToDBBACB(rootB);
             bufMgr.unfixBlock(rootB);
             delete treeLeafBlock;
@@ -799,15 +1337,16 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
 
         // Der Blattknoten, in dem man den neuen Wert eingefügt hat, ist zu voll --> Split des Blattknoten notwendig
         if (split) {
-            std::cout << " SPLITEN" << std::endl;
+            //std::cout << " SPLITEN" << std::endl;
             
             // Neuer Blattknoten, auf dem Haelfte der Werte uebertragen werden, die beim alten Blattknoten geloescht werden
             DBBACB newLeafBlock = bufMgr.fixNewBlock(file);
+            //DBBACB newLeafBlock = fixNewBlock();
             TreeLeafBlock * newTreeLeafBlock = treeLeafBlock->splitBlock(newLeafBlock.getBlockNo()); //don't forget to delete
 
             BlockNo left = treeLeafBlock->blockNo;
             BlockNo right = newTreeLeafBlock->blockNo;
-            DBAttrType * newValue = treeLeafBlock->getValue(treeLeafBlock->currentValueCounter - 1);
+            DBAttrType * newValue = treeLeafBlock->getValue(treeLeafBlock->currentValueCounter - 1); //don't forget to delete
 
             // Falls ein Split gemacht wurde und es keinen Elternknoten gibt --> Elternknoten erstellen + diesen als Root markieren
             if (parentBlockNo == 0) {
@@ -816,6 +1355,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
 
                 // Neuer Elternknoten und diesem Pointer + Werte uebergeben
                 DBBACB newInnerBlock = bufMgr.fixNewBlock(file);
+                //DBBACB newInnerBlock = fixNewBlock();
                 TreeInnerBlock * newRoot = createNewRoot(newInnerBlock.getBlockNo()); //don't forget to delete!
                 newRoot->insertBlockNo(left, *newValue, right, true);
 
@@ -832,7 +1372,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
                 delete treeLeafBlock;
                 delete newValue;
                 
-                std::cout << " Meta Block anpassen" << std::endl;
+                //std::cout << " Meta Block anpassen" << std::endl;
                 bufMgr.unfixBlock(newInnerBlock);
                 bufMgr.unfixBlock(metaB);
                 bufMgr.unfixBlock(newLeafBlock);
@@ -843,7 +1383,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
 
             // Andernfalls: Es gibt Elternknoden --> Diesem Pointer + Value + Pointer uebergeben
             // Elternknoten fügt Pointer+Value+Pointer hinzu (ggf. kann dort wieder ein Split entstehen)
-            std::cout << " Eltern knoten muss sich um einfuegen kuemmern" << std::endl;
+            //std::cout << " Eltern knoten muss sich um einfuegen kuemmern" << std::endl;
 
             newTreeLeafBlock->copyBlockToDBBACB(newLeafBlock);
             treeLeafBlock->copyBlockToDBBACB(rootB);
@@ -892,9 +1432,10 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
             // Nach dem Einfügen der BlockNo + Value + BlockNo muss mit Pech der Elternknoten gesplitet werden
             if (split) {
                 // Split des Elternknoten
-                std::cout << "Elternknoten muss gesplitet werden" << std::endl;
+                //std::cout << "Elternknoten muss gesplitet werden" << std::endl;
                 
                 DBBACB newInnerBlock = bufMgr.fixNewBlock(file);
+                //DBBACB newInnerBlock = fixNewBlock();
                 TreeInnerBlock * newTreeInnerBlock = treeInnerBlock->splitBlock(newInnerBlock.getBlockNo()); //don't forget to delete
 
                 DBAttrType * newParentValue = treeInnerBlock->getValue(treeInnerBlock->currentValueCounter);
@@ -912,6 +1453,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
 
                     // Neuen Root Knoten erstellen und Werte uebertragen (Pointer, Value, Pointer)
                     DBBACB newRootBlock = bufMgr.fixNewBlock(file);
+                    //DBBACB newRootBlock = fixNewBlock();
                     TreeInnerBlock * newRoot = createNewRoot(newRootBlock.getBlockNo()); //don't forget to delete
                     newRoot->insertBlockNo(leftBlockNo,*newParentValue,rightBlockNo,true);
 
@@ -920,7 +1462,7 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
 
                     //newTreeRootBlock.printAllValues();
 
-                    std::cout << " Meta Daten anpassen, da neuer Root Block" << std::endl;
+                    //std::cout << " Meta Daten anpassen, da neuer Root Block" << std::endl;
 
                     DBBACB metaB = bufMgr.fixBlock(file, 0, LOCK_EXCLUSIVE);
                     TreeStartBlock *startBlock = (TreeStartBlock *) metaB.getDataPtr();
@@ -940,7 +1482,6 @@ DBMyIndex::insertValue(BlockNo startBlockNo, const DBAttrType &value, const TID 
                 // Falls es noch Eltern-Elternknoten gibt --> Diesem Pointer + Value + Pointer übergeben
                 delete treeInnerBlock;
                 delete newTreeInnerBlock;
-                
                 ReturnInsertValue r = ReturnInsertValue(leftBlockNo, *newParentValue, rightBlockNo, attrType);
                 delete newParentValue;
                 return r;
@@ -971,7 +1512,7 @@ uint TreeBlock::calculateMaxCounter(enum AttrTypeEnum attrType, bool leaf) {
     uint blockNoSize = sizeof(BlockNo);
     uint intSize = sizeof(int);
     uint doubleSize = sizeof(double);
-    uint varCharSize = 20 * sizeof(char);
+    uint varCharSize = (MAX_STR_LEN + 1) * sizeof(char);
 
     uint intPointerSize = sizeof(int *);
     uint doublePointerSize = sizeof(double *);
@@ -979,33 +1520,35 @@ uint TreeBlock::calculateMaxCounter(enum AttrTypeEnum attrType, bool leaf) {
     uint blockNoPointerSize = sizeof(BlockNo *);
     uint tidPointerSize = sizeof(TID *);
 
-    uint basicSize = 4 * boolSize + blockNoSize + 2 * intSize;
+    uint basicSize = boolSize + 2* blockNoSize + 2 * intSize;
 
     if (leaf) {
         if (AttrTypeEnum::INT == attrType) {
-            return 4;
-            //return std::floor((blockSize - basicSize - tidPointerSize - intPointerSize) / (intSize + tidSize));
+            //return 40;
+            return std::floor((blockSize - basicSize - tidPointerSize - intPointerSize) / (intSize + tidSize));
         }
         if (AttrTypeEnum::DOUBLE == attrType) {
             return std::floor(
                     (blockSize - basicSize - tidPointerSize - doublePointerSize) / (doubleSize + tidSize));
         }
         if (AttrTypeEnum::VCHAR == attrType) {
-            return std::floor((blockSize - basicSize - tidPointerSize - charPointerSize) / (varCharSize + tidSize));
+            return 4;
+            //return std::floor((blockSize - basicSize - tidPointerSize - charPointerSize) / (varCharSize + tidSize));
         }
     } else {
         if (AttrTypeEnum::INT == attrType) {
-            return 4;
-            //return std::floor((blockSize - basicSize - blockNoSize - intPointerSize - blockNoPointerSize) /
-            // (intSize + blockNoSize));
+            // 4;
+            return std::floor((blockSize - basicSize - blockNoSize - intPointerSize - blockNoPointerSize) /
+             (intSize + blockNoSize));
         }
         if (AttrTypeEnum::DOUBLE == attrType) {
             return std::floor((blockSize - basicSize - blockNoSize - doublePointerSize - blockNoPointerSize) /
                               (doubleSize + blockNoSize));
         }
         if (AttrTypeEnum::VCHAR == attrType) {
-            return std::floor((blockSize - basicSize - blockNoSize - charPointerSize - blockNoPointerSize) /
-                              (varCharSize + blockNoSize));
+            return 4;
+            //return std::floor((blockSize - basicSize - blockNoSize - charPointerSize - blockNoPointerSize) /
+              //               (varCharSize + blockNoSize));
         }
 
 
@@ -1031,6 +1574,7 @@ void DBMyIndex::initializeIndex() {
         throw DBIndexException("can not initializie exisiting table");
 }
 
+
 /**
  * Sucht im Index nach einem bestimmten Wert
  * - const DBAttrType & val: zu suchender Schluesselwert
@@ -1042,8 +1586,8 @@ void DBMyIndex::find(const DBAttrType &val, DBListTID &tids) {
     LOG4CXX_INFO(logger, "find()");
     //LOG4CXX_DEBUG(logger, "val:\n" + val.toString("\t"));
 
-    DBIntType *t = (DBIntType *) &val;
-    std::cout << " find " << t->getVal() << std::endl;
+    //DBIntType *t = (DBIntType *) &val;
+    //std::cout << " find " << t->getVal() << std::endl;
     findTIDsFirstCall(val, tids);
     //printAllBlocks();
 }
@@ -1107,10 +1651,9 @@ DBMyIndex::findTIDs(BlockNo startBlockNo, const DBAttrType &val, DBListTID &tids
  * zusammen mit einer Referenz auf eine TID.
  */
 void DBMyIndex::insert(const DBAttrType &val, const TID &tid) {
-    DBIntType *t = (DBIntType *) &val;
-    std::cout << " insert " << t->getVal() << " und tid " << tid.toString() << std::endl;
-    insertValueFirstCall(t->getVal(), tid);
-    printAllBlocks();
+    //std::cout << " insert " << val.toString() << " und tid " << tid.toString() << std::endl;
+    insertValueFirstCall(val, tid);
+    //printAllBlocks();
 
 
 }
@@ -1120,6 +1663,14 @@ TreeInnerBlock * DBMyIndex::createNewRoot(BlockNo blockNo){
         case INT:{
             return new TreeIntInnerBlock(blockNo);
         }
+        
+        case VCHAR:{
+            return new TreeVarCharInnerBlock(blockNo);
+        }
+        case DOUBLE:{
+            return new TreeDoubleInnerBlock(blockNo);
+        }
+        
         default:{
             return (TreeInnerBlock *) nullptr;
         }
@@ -1135,7 +1686,7 @@ void DBMyIndex::remove(const DBAttrType &val, const list<TID> &tid) {
     LOG4CXX_INFO(logger, "remove()");
     LOG4CXX_DEBUG(logger, "val:\n" + val.toString("\t"));
 
-
+    removeValueFirstCall(val,tid.back());
 }
 
 
@@ -1170,13 +1721,17 @@ void *createDBMyIndex(int nArgs, va_list &ap) {
 }
 
 void TreeStartBlock::copyBlockToDBBACB(DBBACB d) {
-    memmove(d.getDataPtr(), (void *) &this->blockNo, sizeof(BlockNo) + sizeof(rootBlockNo));
+    memmove(d.getDataPtr(), (void *) &this->blockNo, 3 * sizeof(BlockNo));
     d.setModified();
 }
 
+/*
+ * INT INNER BLOCK
+ */
+
 void TreeIntInnerBlock::copyBlockToDBBACB(DBBACB d) {
     //std::cout << "BlockNo: " << this->blockNo << " and DBBACB " << d.getBlockNo() << std::endl;
-    int basicSize = 4 * sizeof(bool) + sizeof(BlockNo) + 2 * sizeof(int);
+    int basicSize = sizeof(bool) + 2*sizeof(BlockNo) + 2 * sizeof(int);
     memcpy(d.getDataPtr(), (void *) &this->leaf, basicSize);
 
     memcpy(d.getDataPtr() + basicSize + sizeof(int *) + sizeof(BlockNo *), (void *) this->values,
@@ -1189,7 +1744,7 @@ void TreeIntInnerBlock::copyBlockToDBBACB(DBBACB d) {
 }
 
 void TreeIntInnerBlock::copyDBBACBToBlock(DBBACB d){
-    int basicSize = 4 * sizeof(bool) + sizeof(BlockNo) + 2 * sizeof(int);
+    int basicSize = sizeof(bool) + 2*sizeof(BlockNo) + 2 * sizeof(int);
     memcpy((void *) &this->leaf, d.getDataPtr(), basicSize);
     memcpy((void *) this->values, d.getDataPtr() + basicSize + sizeof(int *) + sizeof(BlockNo *),
     this->maxValueCounter * sizeof(int));
@@ -1198,7 +1753,7 @@ void TreeIntInnerBlock::copyDBBACBToBlock(DBBACB d){
 }
 
 void TreeIntInnerBlock::updatePointers() {
-    int basicSize = 4 * sizeof(bool) + sizeof(BlockNo) + 2 * sizeof(int);
+    int basicSize = sizeof(bool) + 2*sizeof(BlockNo) + 2 * sizeof(int);
     values = (int *) (&this->leaf + basicSize + sizeof(int *) + sizeof(BlockNo *));
     blockNos = (BlockNo *) (&this->leaf + basicSize + sizeof(int *) + sizeof(BlockNo *) +
                             (this->maxValueCounter) * sizeof(int));
@@ -1210,12 +1765,14 @@ int TreeIntInnerBlock::removeBlockNo(BlockNo blockNo) {
     }
 }
 
+/*
 void TreeIntInnerBlock::insertBlockNo(BlockNo blockNoLeft, int value, BlockNo blockNoRight) {
     this->values[0] = value;
     this->blockNos[0] = blockNoLeft;
     this->blockNos[1] = blockNoRight;
     this->currentValueCounter++;
 }
+*/
 
 bool TreeIntInnerBlock::insertBlockNo(BlockNo blockNoLeft, const DBAttrType &value, BlockNo blockNoRight, bool root){
     DBIntType * val = (DBIntType *) &value;
@@ -1268,8 +1825,8 @@ bool TreeIntInnerBlock::insertBlockNo(int value, BlockNo blockNo) {
             this->values[currentValueCounter] = value;
             this->blockNos[currentValueCounter + 1] = blockNo;
             this->currentValueCounter++;
-            std::cout << this->values[currentValueCounter - 1] << std::endl;
-            std::cout << "am ende der Liste einfuegen" << std::endl;
+            //std::cout << this->values[currentValueCounter - 1] << std::endl;
+            //std::cout << "am ende der Liste einfuegen" << std::endl;
         } else {
             // Mitten in der Liste hinzufügen
             for (int i = 0; i < this->currentValueCounter; i++) {
@@ -1356,12 +1913,104 @@ TreeInnerBlock * TreeIntInnerBlock::splitBlock(BlockNo blockNo){
     return newTreeIntInnerBlock;
 }
 
+bool TreeIntInnerBlock::insertBlockNo(const DBAttrType &val, BlockNo blockNo, bool fromLeft){
+    DBIntType * int_value = (DBIntType *) &val;
+    int value = int_value->getVal();
+    if (this->currentValueCounter > 0) {
+        // Am Ende der Liste hinzufügen
+        if (value >= this->values[currentValueCounter - 1]) {
+            this->values[currentValueCounter] = value;
+            this->blockNos[currentValueCounter + 1] = blockNo;
+            this->currentValueCounter++;
+            //std::cout << this->values[currentValueCounter - 1] << std::endl;
+            //std::cout << "am ende der Liste einfuegen" << std::endl;
+        } else {
+            //std::cout << " FALL 2" << std::endl;
+            // Mitten in der Liste hinzufügen
+            //this->printAllValues();
+            //std::cout << "Einfuegen von value" << value << std::endl;
+            for (int i = 0; i < this->currentValueCounter; i++) {
+                if (this->values[i] >= value) {
+                    memmove(&values[i + 1], &values[i], (currentValueCounter - i) * sizeof(int));
+                    memmove(&blockNos[i + 1], &blockNos[i], (currentValueCounter - i + 1) * sizeof(BlockNo));
+                    values[i] = value;
+                    blockNos[i] = blockNo;
+                    this->currentValueCounter++;
+                    break;
+                }
+
+            }
+            //this->printAllValues();
+        }
+    } else {
+        // Am Anfang der Liste hinzufügen (wenn nur ein BlockPointer vorhanden ist)
+        //std::cout << "Liste Leer" << std::endl;
+        if (fromLeft) {
+            this->values[0] = value;
+            this->blockNos[1] = this->blockNos[0];
+            this->blockNos[0] = blockNo;
+            this->currentValueCounter++;
+        } else {
+            this->values[0] = value;
+            this->blockNos[1] = blockNo;
+            this->currentValueCounter++;
+        }
+
+    }
+
+    if (this->currentValueCounter >= this->maxValueCounter) {
+        return true;
+    }
+    return false;
+}
+
+ValueAndTIDPair TreeIntInnerBlock::removeSmallestBlockNo() {
+    //this->printAllValues();
+    // Nur wenn innerer Knoten genuegend Values hat, kann er ein Paar (value, BlockNo) abgeben --> Merge
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue - 1) / maxValue;
+    if (divisionResult >= 0.5) {
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBIntType(this->values[0]), this->blockNos[0], true, INT);
+
+        memmove(&values[0], &values[1], (this->currentValueCounter-1) * sizeof(int));
+        memmove(&blockNos[0], &blockNos[1], (this->currentValueCounter) * sizeof(BlockNo));
+        this->currentValueCounter--;
+
+        //this->printAllValues();
+        return returnPair;
+    }
+    return ValueAndTIDPair(DBIntType(0), BlockNo(), false, INT);
+}
+
+ValueAndTIDPair TreeIntInnerBlock::removeBiggestBlockNo() {
+    // Nur wenn innerer Knoten genuegend Values hat, kann er ein Paar (value, BlockNo) abgeben --> Merge
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue - 1) / maxValue;
+    if (divisionResult >= 0.5) {
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBIntType(this->values[this->currentValueCounter - 1]),
+                                                           this->blockNos[this->currentValueCounter], true,
+                                                           DBIntType(this->values[this->currentValueCounter - 2]), INT);
+        this->currentValueCounter--;
+        return returnPair;
+    }
+    return ValueAndTIDPair(DBIntType(0), BlockNo(), false, INT);
+}
+
+
+
+
 TreeInnerBlock::~TreeInnerBlock(){}
 TreeLeafBlock::~TreeLeafBlock(){}
 
+/*
+ * INT LEAF BLOCK
+ */
+
 void TreeIntLeafBlock::copyBlockToDBBACB(DBBACB d) {
     // std::cout << "BlockNo: " << this->blockNo << " and DBBACB " << d.getBlockNo() << std::endl;
-    int basicSize = 4 * sizeof(bool) + sizeof(BlockNo) + 2 * sizeof(int);
+    int basicSize = sizeof(bool) + 2 * sizeof(BlockNo) + 2 * sizeof(int);
     memcpy(d.getDataPtr(), (void *) &this->leaf, basicSize);
     memcpy(d.getDataPtr() + basicSize + sizeof(int *)+ sizeof(BlockNo *), (void *) this->values,
            this->maxValueCounter * sizeof(int));
@@ -1372,7 +2021,7 @@ void TreeIntLeafBlock::copyBlockToDBBACB(DBBACB d) {
 }
 
 void TreeIntLeafBlock::copyDBBACBToBlock(DBBACB d){
-    int basicSize = 4 * sizeof(bool) + sizeof(BlockNo) + 2 * sizeof(int);
+    int basicSize = sizeof(bool) + 2 * sizeof(BlockNo) + 2 * sizeof(int);
     memcpy(&this->leaf, d.getDataPtr(), basicSize);
     memcpy((void *) this->values, d.getDataPtr() + basicSize + sizeof(int *) + sizeof(BlockNo *),
           this->maxValueCounter * sizeof(int));
@@ -1382,7 +2031,7 @@ void TreeIntLeafBlock::copyDBBACBToBlock(DBBACB d){
 }
 
 void TreeIntLeafBlock::updatePointers() {
-    int basicSize = 4 * sizeof(bool) + sizeof(BlockNo) + 2 * sizeof(int);
+    int basicSize = sizeof(bool) + 2*sizeof(BlockNo) + 2 * sizeof(int);
     values = (int *) (&this->leaf + basicSize + sizeof(int *) + sizeof(BlockNo *));
     tids = (TID *) (&this->leaf + basicSize + sizeof(int *) + sizeof(TID *) +
                     (this->maxValueCounter) * sizeof(int));
@@ -1423,8 +2072,9 @@ bool TreeIntLeafBlock::insertTID(const DBAttrType &val, TID tid) {
     return false;
 }
 
-IntUndersizedAndValuePair TreeIntLeafBlock::removeTID(int value, TID tid) {
+UndersizedAndValuePair TreeIntLeafBlock::removeTID(const DBAttrType &val, TID tid) {
     // Am Ende der Liste löschen
+    int value = ((DBIntType *) &val)->getVal();
     if (value == this->values[currentValueCounter - 1]) {
         this->currentValueCounter--;
     } else {
@@ -1445,10 +2095,14 @@ IntUndersizedAndValuePair TreeIntLeafBlock::removeTID(int value, TID tid) {
     double divisionResult = (currentValue) / maxValue;
 
     if (divisionResult >= 0.5) {
-        IntUndersizedAndValuePair r = IntUndersizedAndValuePair(this->values[0], false);
+        UndersizedAndValuePair r = UndersizedAndValuePair(DBIntType(this->values[this->currentValueCounter-1]), false, INT);
         return r;
     }
-    IntUndersizedAndValuePair r = IntUndersizedAndValuePair(this->values[0], true);
+    if(this->currentValueCounter == 0){
+        UndersizedAndValuePair r = UndersizedAndValuePair(DBIntType(0), true, INT);
+        return r;
+    }
+    UndersizedAndValuePair r = UndersizedAndValuePair(DBIntType(this->values[this->currentValueCounter-1]), true, INT);
     return r;
 }
 
@@ -1488,78 +2142,44 @@ TreeLeafBlock * TreeIntLeafBlock::splitBlock(BlockNo blockNo){
         int offset = std::ceil((this->maxValueCounter)/2);
         TreeIntLeafBlock *newIntLeafBlock = new TreeIntLeafBlock(blockNo);
         memcpy((void *) newIntLeafBlock->values, &(this->values[offset]), sizeof(int) * (this->maxValueCounter - offset));
-        memcpy((void *) newIntLeafBlock->tids, &(this->tids[offset]), sizeof(int) * (this->maxValueCounter - offset));
-    
+        memcpy((void *) newIntLeafBlock->tids, &(this->tids[offset]), sizeof(TID) * (this->maxValueCounter - offset));
         this->currentValueCounter = offset;
         newIntLeafBlock->currentValueCounter = this->maxValueCounter - offset;
+        return newIntLeafBlock;
 }
 
-
-IntValueAndTIDPair TreeIntInnerBlock::removeSmallestBlockNo() {
-    this->printAllValues();
-    // Nur wenn innerer Knoten genuegend Values hat, kann er ein Paar (value, BlockNo) abgeben --> Merge
-    double currentValue = (double) this->currentValueCounter;
-    double maxValue = (double) this->maxValueCounter;
-    double divisionResult = (currentValue - 1) / maxValue;
-    if (divisionResult >= 0.5) {
-        IntValueAndTIDPair returnPair = IntValueAndTIDPair(this->values[0], this->blockNos[0], true);
-        memcpy(&values[0], &values[1], (this->currentValueCounter) * sizeof(int));
-        memcpy(&blockNos[0], &blockNos[1], (this->currentValueCounter) * sizeof(BlockNo));
-        this->currentValueCounter--;
-
-        this->printAllValues();
-        return returnPair;
-    }
-    return IntValueAndTIDPair(0, BlockNo(), false);
-}
-
-IntValueAndTIDPair TreeIntInnerBlock::removeBiggestBlockNo() {
-    // Nur wenn innerer Knoten genuegend Values hat, kann er ein Paar (value, BlockNo) abgeben --> Merge
-    double currentValue = (double) this->currentValueCounter;
-    double maxValue = (double) this->maxValueCounter;
-    double divisionResult = (currentValue - 1) / maxValue;
-    if (divisionResult >= 0.5) {
-        IntValueAndTIDPair returnPair = IntValueAndTIDPair(this->values[this->currentValueCounter - 1],
-                                                           this->blockNos[this->currentValueCounter], true,
-                                                           this->values[this->currentValueCounter - 2]);
-        this->currentValueCounter--;
-        return returnPair;
-    }
-    return IntValueAndTIDPair(0, BlockNo(), false);
-}
-
-
-IntValueAndTIDPair TreeIntLeafBlock::removeSmallestTID() {
-    this->printAllValues();
+ValueAndTIDPair TreeIntLeafBlock::removeSmallestTID() {
+    //this->printAllValues();
     // Nur wenn Blattknoten genuegend Values hat, kann er ein Paar (value, tid) abgeben --> Merge
     double currentValue = (double) this->currentValueCounter;
     double maxValue = (double) this->maxValueCounter;
     double divisionResult = (currentValue - 1) / maxValue;
     if (divisionResult >= 0.5) {
-        IntValueAndTIDPair returnPair = IntValueAndTIDPair(this->values[0], this->tids[0], true);
-        memcpy(&values[0], &values[1], (this->currentValueCounter) * sizeof(int));
-        memcpy(&tids[0], &tids[1], (this->currentValueCounter) * sizeof(TID));
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBIntType(this->values[0]), this->tids[0], true, INT);
+
+        memmove(&values[0], &values[1], (this->currentValueCounter-1) * sizeof(int));
+        memmove(&tids[0], &tids[1], (this->currentValueCounter-1) * sizeof(TID));
         this->currentValueCounter--;
 
-        this->printAllValues();
+        //this->printAllValues();
         return returnPair;
     }
-    return IntValueAndTIDPair(0, TID(), false);
+    return ValueAndTIDPair(DBIntType(0), TID(), false, INT);
 }
 
-IntValueAndTIDPair TreeIntLeafBlock::removeBiggestTID() {
+ValueAndTIDPair TreeIntLeafBlock::removeBiggestTID() {
     // Nur wenn Blattknoten genuegend Values hat, kann er ein Paar (value, tid) abgeben --> Merge
     double currentValue = (double) this->currentValueCounter;
     double maxValue = (double) this->maxValueCounter;
     double divisionResult = (currentValue - 1) / maxValue;
     if (divisionResult >= 0.5) {
-        IntValueAndTIDPair returnPair = IntValueAndTIDPair(this->values[this->currentValueCounter - 1],
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBIntType(this->values[this->currentValueCounter - 1]),
                                                            this->tids[this->currentValueCounter - 1], true,
-                                                           this->values[this->currentValueCounter - 2]);
+                                                           DBIntType(this->values[this->currentValueCounter - 2]), INT);
         this->currentValueCounter--;
         return returnPair;
     }
-    return IntValueAndTIDPair(0, TID(), false);
+    return ValueAndTIDPair(DBIntType(0), TID(), false, INT);
 }
 
 
@@ -1571,6 +2191,843 @@ void TreeIntLeafBlock::printAllValues() {
     }
     std::cout << endl;
 }
+
+
+
+/*
+ * DOUBLE INNER BLOCK
+ */
+
+int TreeDoubleInnerBlock::compare(int index, const DBAttrType &val){
+    DBDoubleType *t = (DBDoubleType *) &val;
+    double value = t->getVal();
+    if(this->values[index] > value){
+        return 1;
+    }
+    else if(this->values[index] == value){
+        return 0;
+    }
+    else{
+        return -1;
+    }
+}
+
+DBAttrType * TreeDoubleInnerBlock::getValue(int index){
+    double value = this->values[index];
+    return new DBDoubleType(value);
+}
+
+void TreeDoubleInnerBlock::setValue(int index, const DBAttrType &value){
+    DBDoubleType * double_value = (DBDoubleType *) &value;
+    this->values[index] = double_value->getVal();
+}
+
+
+void TreeDoubleInnerBlock::copyDBBACBToBlock(DBBACB d){
+    int basicSize = sizeof(bool) + 2 * sizeof(BlockNo) + 2 * sizeof(int);
+    memcpy((void *) &this->leaf, d.getDataPtr(), basicSize);
+    memcpy((void *) this->values, d.getDataPtr() + basicSize + sizeof(double *) + sizeof(BlockNo *),
+           this->maxValueCounter * sizeof(double));
+    memcpy((void *) this->blockNos, d.getDataPtr() + basicSize + sizeof(double *) + sizeof(BlockNo *)
+                                    + this->maxValueCounter * sizeof(double), (this->maxValueCounter + 1) * sizeof(BlockNo));
+}
+void TreeDoubleInnerBlock::copyBlockToDBBACB(DBBACB d){
+    int basicSize = sizeof(bool) + 2 * sizeof(BlockNo) + 2 * sizeof(int);
+    memcpy(d.getDataPtr(), (void *) &this->leaf, basicSize);
+    
+    memcpy(d.getDataPtr() + basicSize + sizeof(double *) + sizeof(BlockNo *), (void *) this->values,
+           this->maxValueCounter * sizeof(double));
+    
+    memcpy(d.getDataPtr() + basicSize + sizeof(double *) + sizeof(BlockNo *) +
+           this->maxValueCounter * sizeof(double),
+           (void *) this->blockNos, (this->maxValueCounter + 1) * sizeof(BlockNo));
+    d.setModified();
+}
+void TreeDoubleInnerBlock::updatePointers(){};
+
+int TreeDoubleInnerBlock::removeBlockNo(BlockNo blockNo){return -1;}
+
+void TreeDoubleInnerBlock::printAllValues(){
+    std::cout << "Block No Inner: " << this->blockNo << " -> ";
+    if (this->currentValueCounter > 0) {
+        std::cout << "(" << this->blockNos[0] << ") ";
+        for (int i = 0; i < this->currentValueCounter; i++) {
+            std::cout << this->values[i] << " (" << this->blockNos[i + 1] << ") ";
+        }
+        std::cout << endl;
+    }
+}
+
+//void insertBlockNo(BlockNo blockNoLeft, double value, BlockNo blockNoRight);
+bool TreeDoubleInnerBlock::insertBlockNo(BlockNo blockNoLeft, const DBAttrType &value, BlockNo blockNoRight, bool root){
+    DBDoubleType * val = (DBDoubleType *) &value;
+    double double_val = val->getVal();
+    if(root) {
+        this->values[0] = double_val;
+        this->blockNos[0] = blockNoLeft;
+        this->blockNos[1] = blockNoRight;
+        this->currentValueCounter++;
+        return false;
+    }
+    else{
+        // Prüfen, wo man BlockNo + Value + BlockNo hinzufügen soll
+        for (int i = 0; i < this->currentValueCounter; i++) {
+            //value > this->values[this->currentValueCounter - 1])
+            if(this->compare(this->currentValueCounter-1, value) == -1){
+                // std::cout << "Fall 1" << std::endl;
+                this->setValue(this->currentValueCounter, value);
+                this->setBlockNo(this->currentValueCounter, blockNoLeft);
+                this->setBlockNo(this->currentValueCounter+1, blockNoRight);
+                break;
+            }
+            //value <= this->values[i]
+            if(this->compare(i, value) >= 0){
+                memmove(&this->values[i + 1], &this->values[i],
+                        sizeof(double) * (this->currentValueCounter - i));
+                memmove(&this->blockNos[i + 2], &this->blockNos[i + 1],
+                        sizeof(BlockNo) * (this->currentValueCounter - i));
+                this->blockNos[i] = blockNoLeft;
+                this->blockNos[i + 1] = blockNoRight;
+                this->values[i] = double_val;
+                break;
+            }
+        }
+        this->currentValueCounter++;
+        if(this->currentValueCounter >= this->maxValueCounter){
+            return true;
+        }
+        else{
+            return false;
+        }
+    }
+}
+
+BlockNo TreeDoubleInnerBlock::getBlockNo(int index){
+    return this->blockNos[index];
+    
+}
+void TreeDoubleInnerBlock::setBlockNo(int index, BlockNo blockNo){
+    this->blockNos[index] = blockNo;
+}
+
+TreeInnerBlock * TreeDoubleInnerBlock::splitBlock(BlockNo blockNo){
+    int offset = std::ceil((this->maxValueCounter) / 2);
+    TreeDoubleInnerBlock * newTreeDoubleInnerBlock = new TreeDoubleInnerBlock(blockNo);
+    memcpy((void *) newTreeDoubleInnerBlock->values,
+           (void *) &(this->values[offset]),
+           sizeof(double) * (this->maxValueCounter - offset));
+    
+    memcpy((void *) newTreeDoubleInnerBlock->blockNos,
+           (void *) &(this->blockNos[offset]),
+           sizeof(BlockNo) * (this->maxValueCounter - offset + 1));
+    
+    this->currentValueCounter = offset - 1;
+    newTreeDoubleInnerBlock->currentValueCounter = this->maxValueCounter - offset;
+    
+    return newTreeDoubleInnerBlock;
+}
+
+bool TreeDoubleInnerBlock::insertBlockNo(const DBAttrType &val, BlockNo blockNo, bool fromLeft){
+    DBDoubleType * double_value = (DBDoubleType *) &val;
+    double value = double_value->getVal();
+    if (this->currentValueCounter > 0) {
+        // Am Ende der Liste hinzufügen
+        if (value >= this->values[currentValueCounter - 1]) {
+            this->values[currentValueCounter] = value;
+            this->blockNos[currentValueCounter + 1] = blockNo;
+            this->currentValueCounter++;
+            //std::cout << this->values[currentValueCounter - 1] << std::endl;
+            //std::cout << "am ende der Liste einfuegen" << std::endl;
+        } else {
+            //std::cout << " FALL 2" << std::endl;
+            // Mitten in der Liste hinzufügen
+            //this->printAllValues();
+            //std::cout << "Einfuegen von value" << value << std::endl;
+            for (int i = 0; i < this->currentValueCounter; i++) {
+                if (this->values[i] >= value) {
+                    memmove(&values[i + 1], &values[i], (currentValueCounter - i) * sizeof(double));
+                    memmove(&blockNos[i + 1], &blockNos[i], (currentValueCounter - i + 1) * sizeof(BlockNo));
+                    values[i] = value;
+                    blockNos[i] = blockNo;
+                    this->currentValueCounter++;
+                    break;
+                }
+
+            }
+            //this->printAllValues();
+        }
+    } else {
+        // Am Anfang der Liste hinzufügen (wenn nur ein BlockPointer vorhanden ist)
+        //std::cout << "Liste Leer" << std::endl;
+        if (fromLeft) {
+            this->values[0] = value;
+            this->blockNos[1] = this->blockNos[0];
+            this->blockNos[0] = blockNo;
+            this->currentValueCounter++;
+        } else {
+            this->values[0] = value;
+            this->blockNos[1] = blockNo;
+            this->currentValueCounter++;
+        }
+
+    }
+
+    if (this->currentValueCounter >= this->maxValueCounter) {
+        return true;
+    }
+    return false;
+}
+
+ValueAndTIDPair TreeDoubleInnerBlock::removeSmallestBlockNo() {
+    //this->printAllValues();
+    // Nur wenn innerer Knoten genuegend Values hat, kann er ein Paar (value, BlockNo) abgeben --> Merge
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue - 1) / maxValue;
+    if (divisionResult >= 0.5) {
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBDoubleType(this->values[0]), this->blockNos[0], true, DOUBLE);
+
+        memmove(&values[0], &values[1], (this->currentValueCounter-1) * sizeof(double));
+        memmove(&blockNos[0], &blockNos[1], (this->currentValueCounter) * sizeof(BlockNo));
+        this->currentValueCounter--;
+
+        //this->printAllValues();
+        return returnPair;
+    }
+    return ValueAndTIDPair(DBDoubleType(0.0), BlockNo(), false, DOUBLE);
+}
+
+ValueAndTIDPair TreeDoubleInnerBlock::removeBiggestBlockNo() {
+    // Nur wenn innerer Knoten genuegend Values hat, kann er ein Paar (value, BlockNo) abgeben --> Merge
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue - 1) / maxValue;
+    if (divisionResult >= 0.5) {
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBDoubleType(this->values[this->currentValueCounter - 1]),
+                                                           this->blockNos[this->currentValueCounter], true,
+                                                           DBDoubleType(this->values[this->currentValueCounter - 2]), DOUBLE);
+        this->currentValueCounter--;
+        return returnPair;
+    }
+    return ValueAndTIDPair(DBDoubleType(0.0), BlockNo(), false, DOUBLE);
+}
+
+
+
+/*
+ * DOUBLE LEAF BLOCK
+ */
+
+
+DBAttrType * TreeDoubleLeafBlock::getValue(int index){
+    double value = this->values[index];
+    return new DBDoubleType(value);
+}
+
+void TreeDoubleLeafBlock::setValue(int index, const DBAttrType &val){
+    DBDoubleType * double_val = (DBDoubleType *) &val;
+    this->values[index] = double_val->getVal();
+}
+
+TID TreeDoubleLeafBlock::getTID(int index){
+    return this->tids[index];
+}
+
+void TreeDoubleLeafBlock::setTID(int index, TID tid){
+    this->tids[index] = tid;
+}
+
+int TreeDoubleLeafBlock::compare(int index, const DBAttrType &val){
+    DBDoubleType *t = (DBDoubleType *) &val;
+    double value = t->getVal();
+    if(this->values[index] > value){
+        return 1;
+    }
+    else if(this->values[index] == value){
+        return 0;
+    }
+    else{
+        return -1;
+    }
+}
+
+void TreeDoubleLeafBlock::copyBlockToDBBACB(DBBACB d) {
+    // std::cout << "BlockNo: " << this->blockNo << " and DBBACB " << d.getBlockNo() << std::endl;
+    int basicSize = sizeof(bool) + 2 * sizeof(BlockNo) + 2 * sizeof(int);
+    memcpy(d.getDataPtr(), (void *) &this->leaf, basicSize);
+    memcpy(d.getDataPtr() + basicSize + sizeof(double *)+ sizeof(BlockNo *), (void *) this->values,
+           this->maxValueCounter * sizeof(double));
+    memcpy(d.getDataPtr() + basicSize + sizeof(double *)+ sizeof(BlockNo *)+
+           this->maxValueCounter * sizeof(double),
+           (void *) this->tids, this->maxValueCounter * sizeof(TID));
+    d.setModified();
+}
+
+void TreeDoubleLeafBlock::copyDBBACBToBlock(DBBACB d){
+    int basicSize = sizeof(bool) + 2 * sizeof(BlockNo) + 2 * sizeof(int);
+    memcpy(&this->leaf, d.getDataPtr(), basicSize);
+    memcpy((void *) this->values, d.getDataPtr() + basicSize + sizeof(double *) + sizeof(BlockNo *),
+           this->maxValueCounter * sizeof(double));
+    memcpy((void *) this->tids, d.getDataPtr() + basicSize + sizeof(double *) + sizeof(BlockNo *) +
+                                this->maxValueCounter * sizeof(double),
+           this->maxValueCounter * sizeof(TID));
+}
+
+void TreeDoubleLeafBlock::updatePointers(){}
+
+bool TreeDoubleLeafBlock::insertTID(const DBAttrType &val, TID tid){
+    DBDoubleType * double_val = (DBDoubleType *) &val;
+    double value = double_val->getVal();
+    if (this->currentValueCounter > 0) {
+        // Am Ende der Liste hinzufügen
+        if (value >= this->values[currentValueCounter - 1]) {
+            this->values[currentValueCounter] = value;
+            this->tids[currentValueCounter] = tid;
+            this->currentValueCounter++;
+        } else {
+            // Mitten in der Liste hinzufügen
+            for (int i = 0; i < this->currentValueCounter; i++) {
+                if (this->values[i] >= value) {
+                    memmove(&values[i + 1], &values[i], (currentValueCounter - i) * sizeof(double));
+                    memmove(&tids[i + 1], &tids[i], (currentValueCounter - i) * sizeof(TID));
+                    values[i] = value;
+                    tids[i] = tid;
+                    this->currentValueCounter++;
+                    break;
+                }
+            }
+        }
+    } else {
+        // Am Anfang der Liste hinzufügen (wenn leer)
+        this->values[0] = value;
+        this->tids[0] = tid;
+        this->currentValueCounter++;
+    }
+    
+    if (this->currentValueCounter >= this->maxValueCounter) {
+        return true;
+    }
+    return false;
+}
+
+TreeLeafBlock * TreeDoubleLeafBlock::splitBlock(BlockNo blockNo){
+    int offset = std::ceil((this->maxValueCounter)/2);
+    TreeDoubleLeafBlock *newDoubleLeafBlock = new TreeDoubleLeafBlock(blockNo);
+    memcpy((void *) newDoubleLeafBlock->values, &(this->values[offset]), sizeof(double) * (this->maxValueCounter - offset));
+    memcpy((void *) newDoubleLeafBlock->tids, &(this->tids[offset]), sizeof(TID) * (this->maxValueCounter - offset));
+    this->currentValueCounter = offset;
+    newDoubleLeafBlock->currentValueCounter = this->maxValueCounter - offset;
+    return newDoubleLeafBlock;
+}
+
+void TreeDoubleLeafBlock::printAllValues(){
+    std::cout << "Block No Leaf: " << this->blockNo << " -> ";
+    for (int i = 0; i < this->currentValueCounter; i++) {
+        //std::cout << this->values[i]<<":"<<this->tids[i].toString() << " ";
+        std::cout << this->values[i] << " ";
+    }
+    std::cout << endl;
+}
+
+UndersizedAndValuePair TreeDoubleLeafBlock::removeTID(const DBAttrType &val, TID tid) {
+    // Am Ende der Liste löschen
+    double value = ((DBDoubleType *) &val)->getVal();
+    if (value == this->values[currentValueCounter - 1]) {
+        this->currentValueCounter--;
+    } else {
+        // Mitten in der Liste löschen
+        for (int i = 0; i < this->currentValueCounter; i++) {
+            if (this->values[i] == value) {
+                memmove(&values[i], &values[i + 1], (currentValueCounter - i) * sizeof(double));
+                memmove(&tids[i], &tids[i + 1], (currentValueCounter - i) * sizeof(TID));
+                this->currentValueCounter--;
+                break;
+            }
+        }
+    }
+    std::cout << "this->values(0) " << this->values[0] << std::endl;
+
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue) / maxValue;
+
+    if (divisionResult >= 0.5) {
+        UndersizedAndValuePair r = UndersizedAndValuePair(DBDoubleType(this->values[this->currentValueCounter-1]), false, DOUBLE);
+        return r;
+    }
+    if(this->currentValueCounter == 0){
+        UndersizedAndValuePair r = UndersizedAndValuePair(DBDoubleType(0.0), true, DOUBLE);
+        return r;
+    }
+    UndersizedAndValuePair r = UndersizedAndValuePair(DBDoubleType(this->values[this->currentValueCounter-1]), true, DOUBLE);
+    return r;
+}
+
+ValueAndTIDPair TreeDoubleLeafBlock::removeSmallestTID() {
+    //this->printAllValues();
+    // Nur wenn Blattknoten genuegend Values hat, kann er ein Paar (value, tid) abgeben --> Merge
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue - 1) / maxValue;
+    if (divisionResult >= 0.5) {
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBDoubleType(this->values[0]), this->tids[0], true, DOUBLE);
+
+        memmove(&values[0], &values[1], (this->currentValueCounter-1) * sizeof(double));
+        memmove(&tids[0], &tids[1], (this->currentValueCounter-1) * sizeof(TID));
+        this->currentValueCounter--;
+
+        //this->printAllValues();
+        return returnPair;
+    }
+    return ValueAndTIDPair(DBDoubleType(0.0), TID(), false, DOUBLE);
+}
+
+ValueAndTIDPair TreeDoubleLeafBlock::removeBiggestTID() {
+    // Nur wenn Blattknoten genuegend Values hat, kann er ein Paar (value, tid) abgeben --> Merge
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue - 1) / maxValue;
+    if (divisionResult >= 0.5) {
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBDoubleType(this->values[this->currentValueCounter - 1]),
+                                                           this->tids[this->currentValueCounter - 1], true,
+                                                           DBDoubleType(this->values[this->currentValueCounter - 2]), DOUBLE);
+        this->currentValueCounter--;
+        return returnPair;
+    }
+    return ValueAndTIDPair(DBDoubleType(0.0), TID(), false, DOUBLE);
+}
+
+
+/*
+ * VARCHAR INNER BLOCK
+ */
+
+
+DBAttrType * TreeVarCharInnerBlock::getValue(int index) {
+    char * value = &(this->values[index*(MAX_STR_LEN+1)]);
+    return new DBVCharType(value);
+}
+
+void TreeVarCharInnerBlock::setValue(int index, const DBAttrType &val) {
+    DBVCharType *t = (DBVCharType *) &val;
+    strncpy(&(this->values[index*(MAX_STR_LEN+1)]),(t->getVal()).c_str(),MAX_STR_LEN);
+    this->values[index*(MAX_STR_LEN+1) + MAX_STR_LEN]='\0';
+}
+
+BlockNo TreeVarCharInnerBlock::getBlockNo(int index){
+   return this->blockNos[index];
+}
+void TreeVarCharInnerBlock::setBlockNo(int index, BlockNo blockNo){
+    this->blockNos[index] = blockNo;
+}
+
+
+int TreeVarCharInnerBlock::compare(int index, const DBAttrType &val){
+    DBVCharType *t = (DBVCharType *) &val;
+    DBVCharType indexValue = DBVCharType(&(this->values[index*(MAX_STR_LEN+1)]));
+    if(indexValue > *t){
+        return 1;
+    }
+    else if(indexValue == *t){
+        return 0;
+    }
+    else{
+        return -1;
+    }
+}
+void TreeVarCharInnerBlock::copyBlockToDBBACB(DBBACB d){
+    int basicSize = sizeof(bool) + 2 * sizeof(BlockNo) + 2 * sizeof(int);
+    memcpy(d.getDataPtr(), (void*) &this->leaf, basicSize);
+    
+    memcpy(d.getDataPtr() + basicSize + sizeof(char *) + sizeof(BlockNo *),
+           (void *) this->values,
+           (this->maxValueCounter) * (MAX_STR_LEN + 1) * sizeof(char));
+    
+    memcpy(d.getDataPtr() + basicSize + sizeof(char *) + sizeof(BlockNo *)
+            + (this->maxValueCounter) * (MAX_STR_LEN + 1) * sizeof(char),
+           (void *) this->blockNos,
+           (this->maxValueCounter + 1) * sizeof(BlockNo));
+    
+    d.setModified();
+}
+
+void TreeVarCharInnerBlock::copyDBBACBToBlock(DBBACB d){
+    int basicSize = sizeof(bool) + 2 * sizeof(BlockNo) + 2 * sizeof(int);
+    memcpy((void *) &this->leaf, d.getDataPtr(), basicSize);
+    
+    memcpy((void *) this->values, d.getDataPtr() + basicSize + sizeof(char *) + sizeof(BlockNo *),
+           (this->maxValueCounter) * (MAX_STR_LEN + 1) * sizeof(char));
+    
+    memcpy((void *) this->blockNos,
+           d.getDataPtr() + basicSize + sizeof(char *) + sizeof(BlockNo *) + (this->maxValueCounter) * (MAX_STR_LEN + 1) * sizeof(char),
+           (this->maxValueCounter + 1) * sizeof(BlockNo));
+}
+void TreeVarCharInnerBlock::updatePointers(){}
+
+
+int TreeVarCharInnerBlock::removeBlockNo(BlockNo blockNo){return 0;}
+
+void TreeVarCharInnerBlock::printAllValues(){
+    std::cout << "BlockNo Inner: " << this->blockNo << " -> ";
+    if(this->currentValueCounter > 0){
+        std::cout << "(" << this->blockNos[0] << ") ";
+        for(int i=0; i < this->currentValueCounter; i++){
+            std::cout << &(this->values[i * (MAX_STR_LEN + 1)]) << " (" <<this->blockNos[i+1] << ") ";
+        }
+    }
+    std::cout << endl;
+}
+
+bool TreeVarCharInnerBlock::insertBlockNo(const DBAttrType &val, BlockNo blockNo, bool fromLeft){
+    DBVCharType * vchar_value = (DBVCharType *) &val;
+    //int value = int_value->getVal();
+    if (this->currentValueCounter > 0) {
+        // Am Ende der Liste hinzufügen
+        //if (value >= this->values[currentValueCounter - 1]) {
+        if(this->compare(this->currentValueCounter-1, val) <= 0){
+            this->setValue(currentValueCounter, val);
+            this->blockNos[currentValueCounter + 1] = blockNo;
+            this->currentValueCounter++;
+            //std::cout << this->values[currentValueCounter - 1] << std::endl;
+            //std::cout << "am ende der Liste einfuegen" << std::endl;
+        } else {
+            //std::cout << " FALL 2" << std::endl;
+            // Mitten in der Liste hinzufügen
+            //this->printAllValues();
+            //std::cout << "Einfuegen von value" << value << std::endl;
+            for (int i = 0; i < this->currentValueCounter; i++) {
+                //if (this->values[i] >= value) {
+                if(this->compare(i, val) >= 0){
+                    memmove(&values[(i + 1)*(MAX_STR_LEN+1)], &values[i*(MAX_STR_LEN+1)], (currentValueCounter - i) * (MAX_STR_LEN+1) * sizeof(char));
+                    memmove(&blockNos[i + 1], &blockNos[i], (currentValueCounter - i + 1) * sizeof(BlockNo));
+                    this->setValue(i,val);
+                    this->blockNos[i] = blockNo;
+                    this->currentValueCounter++;
+                    break;
+                }
+
+            }
+            //this->printAllValues();
+        }
+    } else {
+        // Am Anfang der Liste hinzufügen (wenn nur ein BlockPointer vorhanden ist)
+        //std::cout << "Liste Leer" << std::endl;
+        if (fromLeft) {
+            this->setValue(0,val);
+            this->blockNos[1] = this->blockNos[0];
+            this->blockNos[0] = blockNo;
+            this->currentValueCounter++;
+        } else {
+            this->setValue(0,val);
+            this->blockNos[1] = blockNo;
+            this->currentValueCounter++;
+        }
+
+    }
+
+    if (this->currentValueCounter >= this->maxValueCounter) {
+        return true;
+    }
+    return false;
+}
+
+ValueAndTIDPair TreeVarCharInnerBlock::removeSmallestBlockNo() {
+    //this->printAllValues();
+    // Nur wenn innerer Knoten genuegend Values hat, kann er ein Paar (value, BlockNo) abgeben --> Merge
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue - 1) / maxValue;
+    if (divisionResult >= 0.5) {
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBVCharType(&(this->values[0])), this->blockNos[0], true, VCHAR);
+
+        memmove(&values[0], &values[MAX_STR_LEN+1], (this->currentValueCounter-1) * sizeof(char) * (MAX_STR_LEN+1));
+        memmove(&blockNos[0], &blockNos[1], (this->currentValueCounter) * sizeof(BlockNo));
+        this->currentValueCounter--;
+
+        //this->printAllValues();
+        return returnPair;
+    }
+    return ValueAndTIDPair(DBVCharType("0"), BlockNo(), false, VCHAR);
+}
+
+ValueAndTIDPair TreeVarCharInnerBlock::removeBiggestBlockNo() {
+    // Nur wenn innerer Knoten genuegend Values hat, kann er ein Paar (value, BlockNo) abgeben --> Merge
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue - 1) / maxValue;
+    if (divisionResult >= 0.5) {
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBVCharType(&(this->values[(MAX_STR_LEN+1) * (this->currentValueCounter - 1)])),
+                                                           this->blockNos[this->currentValueCounter], true,
+                                                           DBVCharType(&(this->values[(MAX_STR_LEN+1) * (this->currentValueCounter - 2)])), VCHAR);
+        this->currentValueCounter--;
+        return returnPair;
+    }
+    return ValueAndTIDPair(DBVCharType("0"), BlockNo(), false, VCHAR);
+}
+
+//void TreeVarCharInnerBlock::insertBlockNo(BlockNo blockNoLeft, char *value, BlockNo blockNoRight){}
+bool TreeVarCharInnerBlock::insertBlockNo(BlockNo blockNoLeft, const DBAttrType &value, BlockNo blockNoRight, bool root){
+    DBVCharType *val = (DBVCharType *) &value;
+    
+    if(root){
+        strncpy(&(this->values[0]),(val->getVal()).c_str(),MAX_STR_LEN);this->values[MAX_STR_LEN]='\0';
+        this->blockNos[0] = blockNoLeft;
+        this->blockNos[1] = blockNoRight;
+        this->currentValueCounter++;
+        return false;
+    }
+    else{
+        //Prüfen, wo BlockNo + Value + BlockNo hinzugefügt werden soll
+        for(int i = 0; i < this->currentValueCounter; i++){
+            //value > this->values[this->currentValueCounter - 1]
+            //i.e. have to append the value at
+            if(this->compare(this->currentValueCounter-1, value) == -1){
+                this->setValue(this->currentValueCounter, value);
+                this->setBlockNo(this->currentValueCounter, blockNoLeft);
+                this->setBlockNo(this->currentValueCounter+1, blockNoRight);
+                break;
+            }
+            
+            //value <= this->values[i]
+            if(this->compare(i, value) >= 0){
+                memmove(&this->values[(i+1)*(MAX_STR_LEN+1)], &this->values[i*(MAX_STR_LEN+1)], (MAX_STR_LEN + 1) * sizeof(char) * (this->currentValueCounter - i));
+                memmove(&this->blockNos[i+2], &this->blockNos[i+1], sizeof(BlockNo) * (this->currentValueCounter -i));
+                this->blockNos[i] = blockNoLeft;
+                this->blockNos[i+1] = blockNoRight;
+                this->setValue(i,value);
+                break;
+            }
+        }
+        this->currentValueCounter++;
+        if(this->currentValueCounter >= this->maxValueCounter){
+            return true;
+        }
+        else{
+            return false;
+        }
+    }
+}
+
+//CharValueAndTIDPair removeSmallestBlockNo();
+//CharValueAndTIDPair removeBiggestBlockNo();
+
+TreeInnerBlock * TreeVarCharInnerBlock::splitBlock(BlockNo blockNo){
+    int offset = std::ceil((this->maxValueCounter) / 2);
+    TreeVarCharInnerBlock * newTreeVarCharInnerBlock = new TreeVarCharInnerBlock(blockNo);
+    memcpy((void *) newTreeVarCharInnerBlock->values,
+            (void *) &(this->values[offset*(MAX_STR_LEN+1)]),
+            (MAX_STR_LEN + 1) * sizeof(char) * (this->maxValueCounter - offset + 1)
+    );
+    
+    memcpy((void *) newTreeVarCharInnerBlock->blockNos,
+           (void *) &(this->blockNos[offset]),
+           sizeof(BlockNo) * (this->maxValueCounter - offset +1)
+    );
+    
+    this->currentValueCounter = offset - 1;
+    newTreeVarCharInnerBlock->currentValueCounter = this->maxValueCounter - offset;
+    
+    return newTreeVarCharInnerBlock;
+}
+
+
+
+/*
+ * VARCHAR LEAF BLOCK
+ */
+
+
+DBAttrType * TreeVarCharLeafBlock::getValue(int index){
+    char * value = &(this->values[index*(MAX_STR_LEN+1)]);
+    return new DBVCharType(value);
+}
+
+void TreeVarCharLeafBlock::setValue(int index, const DBAttrType &val) {
+    DBVCharType *t = (DBVCharType *) &val;
+    strncpy(&(this->values[index * (MAX_STR_LEN + 1)]), (t->getVal()).c_str(), MAX_STR_LEN);
+    this->values[index * (MAX_STR_LEN + 1) + MAX_STR_LEN] = '\0';
+}
+
+TID TreeVarCharLeafBlock::getTID(int index){
+    return this->tids[index];
+}
+void TreeVarCharLeafBlock::setTID(int index, TID tid){
+    this->tids[index] = tid;
+}
+
+int TreeVarCharLeafBlock::compare(int index, const DBAttrType &val){
+    DBVCharType *t = (DBVCharType *) &val;
+    DBVCharType indexValue = DBVCharType(&(this->values[index*(MAX_STR_LEN+1)]));
+    if(indexValue > *t){
+        return 1;
+    }
+    else if(indexValue == *t){
+        return 0;
+    }
+    else{
+        return -1;
+    }
+}
+
+void TreeVarCharLeafBlock::copyDBBACBToBlock(DBBACB d){
+    int basicSize = sizeof(bool) + 2 * sizeof(BlockNo) + 2 * sizeof(int);
+    memcpy(&this->leaf, d.getDataPtr(), basicSize);
+    memcpy((void *) this->values, d.getDataPtr() + basicSize + sizeof(char *) + sizeof(BlockNo *),
+           this->maxValueCounter * sizeof(char) * (MAX_STR_LEN + 1));
+    memcpy((void *) this->tids, d.getDataPtr() + basicSize + sizeof(char *) + sizeof(BlockNo *)
+           +this->maxValueCounter * sizeof(char) * (MAX_STR_LEN + 1),
+            this->maxValueCounter * sizeof(TID));
+}
+void TreeVarCharLeafBlock::copyBlockToDBBACB(DBBACB d){
+    int basicSize = sizeof(bool) +  2 * sizeof(BlockNo) + 2 * sizeof(int);
+    memcpy(d.getDataPtr(), (void *) &this->leaf, basicSize);
+    memcpy(d.getDataPtr() + basicSize + sizeof(char *) + sizeof(BlockNo *), (void *) this->values,
+           this->maxValueCounter * sizeof(char) * (MAX_STR_LEN + 1));
+    memcpy(d.getDataPtr() + basicSize + sizeof(char *) + sizeof(BlockNo *)
+           + this->maxValueCounter * sizeof(char) * (MAX_STR_LEN + 1),
+           (void *)this->tids,
+            this->maxValueCounter * sizeof(TID));
+    d.setModified();
+};
+
+void TreeVarCharLeafBlock::updatePointers(){}
+
+bool TreeVarCharLeafBlock::insertTID(const DBAttrType &val, TID tid){
+    DBVCharType * char_value = (DBVCharType *) &val;
+    if(this->currentValueCounter > 0){
+        // Am Ende der Liste hinzufügen
+        //val >= this->values[currentValueCounter - 1]
+        if(this->compare(this->currentValueCounter-1, val) <= 0){
+            this->setValue(currentValueCounter, val);
+            this->setTID(currentValueCounter, tid);
+            this->currentValueCounter++;
+        }
+        else{
+            // Mitten in der Liste einfügen
+            for(int i = 0; i < this->currentValueCounter; i++){
+                //this->values[i] >= value
+                if(this->compare(i, val) >= 0){
+                    memmove(&values[(i+1)*(MAX_STR_LEN + 1)], &values[i*(MAX_STR_LEN + 1)], (currentValueCounter - i) * sizeof(char) * (MAX_STR_LEN + 1));
+                    memmove(&tids[i+1], &tids[i], (currentValueCounter - i) * sizeof(TID));
+                    this->setValue(i, val);
+                    this->setTID(i, tid);
+                    this->currentValueCounter++;
+                    break;
+                }
+            }
+        }
+    }
+    else{
+        // Am Anfang der Liste hinzufügen (wenn leer)
+        strncpy(&(this->values[0]),(char_value->getVal()).c_str(),MAX_STR_LEN);this->values[MAX_STR_LEN]='\0';
+        this->setTID(0,tid);
+        this->currentValueCounter++;
+    }
+    
+    if(this->currentValueCounter >= this->maxValueCounter){
+        return true;
+    }
+    else{
+        return false;
+    }
+}
+
+TreeLeafBlock * TreeVarCharLeafBlock::splitBlock(BlockNo blockNo){
+    int offset = std::ceil((this->maxValueCounter) / 2);
+    TreeVarCharLeafBlock *newVarCharLeafBlock = new TreeVarCharLeafBlock(blockNo);
+    memcpy((void *) newVarCharLeafBlock->values,
+           &(this->values[offset * (MAX_STR_LEN + 1)]),
+           (this->maxValueCounter - offset) * sizeof(char) * (MAX_STR_LEN + 1));
+    
+    memcpy((void *) newVarCharLeafBlock->tids,
+           &(this->tids[offset]),
+           (this->maxValueCounter - offset) * sizeof(TID));
+    
+    this->currentValueCounter = offset;
+    newVarCharLeafBlock->currentValueCounter = this->maxValueCounter - offset;
+    
+    return newVarCharLeafBlock;
+}
+
+void TreeVarCharLeafBlock::printAllValues(){
+    std::cout << "Block No Leaf: " << this->blockNo << " -> ";
+    for(int i = 0; i < this->currentValueCounter; i++){
+        std::cout << &(this->values[i * (MAX_STR_LEN + 1)]) << " ";
+    }
+    std::cout << endl;
+}
+
+UndersizedAndValuePair TreeVarCharLeafBlock::removeTID(const DBAttrType &val, TID tid) {
+    // Am Ende der Liste löschen
+    //int value = ((DBIntType *) &val)->getVal();
+    //if (value == this->values[currentValueCounter - 1]) {
+    if(this->compare(this->currentValueCounter-1,val) == 0){
+        this->currentValueCounter--;
+    } else {
+        // Mitten in der Liste löschen
+        for (int i = 0; i < this->currentValueCounter; i++) {
+            //if (this->values[i] == value) {
+            if(this->compare(i,val) == 0){
+                memmove(&values[i*(MAX_STR_LEN+1)], &values[(i + 1)*(MAX_STR_LEN+1)], (currentValueCounter - i) * sizeof(char) * (MAX_STR_LEN+1));
+                memmove(&tids[i], &tids[i + 1], (currentValueCounter - i) * sizeof(TID));
+                this->currentValueCounter--;
+                break;
+            }
+        }
+    }
+    std::cout << "this->values(0) " << this->values[0] << std::endl;
+
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue) / maxValue;
+
+    if (divisionResult >= 0.5) {
+        UndersizedAndValuePair r = UndersizedAndValuePair(DBVCharType(&(this->values[(this->currentValueCounter-1)*(MAX_STR_LEN+1)])), false, VCHAR);
+        return r;
+    }
+    if(this->currentValueCounter == 0){
+        UndersizedAndValuePair r = UndersizedAndValuePair(DBVCharType("0"), true, VCHAR);
+        return r;
+    }
+    UndersizedAndValuePair r = UndersizedAndValuePair(DBVCharType(&(this->values[(this->currentValueCounter-1)*(MAX_STR_LEN+1)])), true, VCHAR);
+    return r;
+}
+
+ValueAndTIDPair TreeVarCharLeafBlock::removeSmallestTID() {
+    //this->printAllValues();
+    // Nur wenn Blattknoten genuegend Values hat, kann er ein Paar (value, tid) abgeben --> Merge
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue - 1) / maxValue;
+    if (divisionResult >= 0.5) {
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBVCharType(&(this->values[0])), this->tids[0], true, VCHAR);
+
+        memmove(&values[0], &values[MAX_STR_LEN+1], (this->currentValueCounter-1) * (MAX_STR_LEN+1) * sizeof(char));
+        memmove(&tids[0], &tids[1], (this->currentValueCounter-1) * sizeof(TID));
+        this->currentValueCounter--;
+
+        //this->printAllValues();
+        return returnPair;
+    }
+    return ValueAndTIDPair(DBVCharType("0"), TID(), false, VCHAR);
+}
+
+ValueAndTIDPair TreeVarCharLeafBlock::removeBiggestTID() {
+    // Nur wenn Blattknoten genuegend Values hat, kann er ein Paar (value, tid) abgeben --> Merge
+    double currentValue = (double) this->currentValueCounter;
+    double maxValue = (double) this->maxValueCounter;
+    double divisionResult = (currentValue - 1) / maxValue;
+    if (divisionResult >= 0.5) {
+        ValueAndTIDPair returnPair = ValueAndTIDPair(DBVCharType(&(this->values[(this->currentValueCounter-1)*(MAX_STR_LEN+1)])),
+                                                           this->tids[this->currentValueCounter - 1], true,
+                                                           DBVCharType(&(this->values[(this->currentValueCounter-2)*(MAX_STR_LEN+1)])), VCHAR);
+        this->currentValueCounter--;
+        return returnPair;
+    }
+    return ValueAndTIDPair(DBVCharType("0"), TID(), false, VCHAR);
+}
+
+
 
 
 
